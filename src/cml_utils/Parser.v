@@ -398,3 +398,177 @@ Module Type Parser.
           end
       end
     end.
+
+  (* try: ('a, 'b) parser -> ('a, 'b) parser
+    * `try p`
+    * Tries parser `p` remembering the state of the stream so that if it fails
+    * and consumes input, then `try p` fails but does _not_ consume input.
+    *)
+  Definition try {A B : Type} `{EqClass A, EqClass B} (p : parser A B) := 
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        match p (cs, line, col) with
+        | (Err err, _, _, _) => (Err err, cs, line, col)
+        | (Ok x, cs', line', col') => (Ok x, cs', line', col')
+        end
+      end.
+  (* many: ('a, 'b) parser -> ('a list, 'b) parser
+    * `many p`
+    * Tries parser `p` zero or more times. As long as `p` succeeds, `many p`
+    * will continue to consume input. Once `p` fails whether it has consumed
+    * input or not, `many p` succeeds returning the empty list withut consuming
+    * input.
+    *)
+  Fixpoint many {A B : Type} `{EqClass A, EqClass B} (p : parser A B) : (parser (list A) B) := 
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        match p (cs, line, col) with
+        | (Ok x, cs', line', col') => 
+            match many p (cs', line', col') with
+            | (Ok xs, cs'', line'', col'') => (Ok (x::xs), cs'', line'', col'')
+            | (Err _, _, _ , _) => (Ok nil, cs, line, col)
+            end
+      | (Err _, _, _, _) => (Ok nil, cs, line, col)
+      end
+    end.
+  (* many1: ('a, 'b) parser -> ('a list, 'b) parser
+    * `many1 p`
+    * Tries parser `p` one or more times. As long as `p` succeeds, `many1 p`
+    * will continue to consume input.
+    *)
+  Definition many1 p stream = bind p (fn x => map (fn xs => x::xs) (many p)) stream
+  (* skipMany: ('a, 'b) parser -> (unit, 'b) parser
+    * `skipMany p`
+    * Tries parser `p` zero or more times, discarding the results. As long as
+    * `p` succeeds, `skipMany p` will consume input. Succeeds the first time
+    * `p` fails and does not consume input. Should `p` fail and consume input,
+    * then so does this function.
+    *)
+  Definition skipMany p (cs, line, col) := 
+      case p (cs, line, col) of
+        (Ok _, cs', line', col') => skipMany p (cs', line', col')
+      | (Err err, cs', line', col') =>
+          if line = line' andalso col = col' andalso cs = cs'
+          then (Ok (), cs, line, col)
+          else (Err err, cs', line', col')
+  (* spaces: (unit, char) parser
+    * `spaces = skipMany space`
+    * Skips zero or more ASCII whitespace characters. Does not consume input
+    * upon failure.
+    *)
+  val spaces = skipMany space
+  (* count: int -> ('a, 'b) parser -> ('a list, 'b) parser
+    * `count n p`
+    * Applies the parser `p` at most `n` times or until the first time `p`
+    * fails. Consumes input whenever `p` does so.
+    *)
+  Definition count n p (cs, line, col) := 
+      if n <= 0
+      then (Ok [], cs, line, col)
+      else
+          bind p
+              (fn x => map (fn xs => x::xs) (count (n - 1) p))
+              (cs, line, col)
+  (* between: ('a, 'b) parser -> ('c, 'b) parser -> ('d, 'b) parser -> ('d, 'b) parser
+    * `between open close p`
+    * Runs parser `open`, then runs `p`, then `close` keeping only the result
+    * of `p` upon success.
+    *)
+  Definition between openp closep p stream := 
+      bind openp (fn _ => bind p (fn x => return x closep)) stream
+  (* option: 'a -> ('a, 'b) parser -> ('a, 'b) parser
+    * `option x p`
+    * Runs parser `p` and succeeds returning `x` should `p` fail and not
+    * consume input. If `p` succeeds, then this function returns whatever
+    * result `p` produces. If `p` fails and consumes input, then this function
+    * does the same.
+    *)
+  Definition option x p (cs, line, col) := 
+      case p (cs, line, col) of
+        (Ok y, cs', line', col') => (Ok y, cs', line', col')
+      | (Err err, cs', line', col') =>
+          if line = line' andalso col = col' andalso cs = cs'
+          then (Ok x, cs, line, col)
+          else (Err err, cs', line', col')
+  (* optionOpt: ('a, 'b) parser -> ('a option, 'b) parser
+    * Runs parser `p` and succeeds returning `None` should `p` fail and not
+    * consume input.
+    *)
+  (* Definition optionOpt p (cs, line, col) := 
+      case p (cs, line, col) of
+        (Ok x, cs', line', col') => (Ok (Some x), cs', line', col')
+      | (Err err, cs', line', col') =>
+          if line = line' andalso col = col' andalso cs = cs'
+          then (Ok None, cs, line, col)
+          else (Err err, cs', line', col') *)
+  (* sepBy: ('a, 'b) parser -> ('c, 'b) parser -> ('a list, 'b) parser
+    * `sepBy p sep`
+    * Runs zero or more iterations of `p` separated by iterations of `sep` and
+    * only the results of `p` are retained. Does not consume input upon
+    * failure.
+    *)
+  Definition sepBy p sepp (cs, line, col) := 
+      case p (cs, line, col) of
+        (Err _, _, _, _) => (Ok [], cs, line, col)
+      | (Ok x, cs', line', col') =>
+          case sepp (cs', line', col') of
+            (Err _, _, _, _) =>
+              (Ok [x], cs', line', col')
+          | (Ok _, cs'', line'', col'') =>
+              map (fn xs => x::xs) (sepBy p sepp) (cs'', line'', col'')
+              (* let
+                  val (Ok xs, cs''', line''', col''') := 
+                      sepBy p sepp (cs'', line'', col'')
+              in
+                  (Ok (x::xs), cs''', line''', col''')
+              end *)
+  (* sepEndBy: ('a, 'b) parser -> ('c, 'b) parser -> ('a list, 'b) parser
+    * `sepEndBy p sep`
+    * Runs zero or more iterations of `p` interspersed with `sep` and an
+    * optional instance of `sep` at the end. Only the results of `p` are
+    * retained. Does not consume input upon failure.
+    *)
+  Definition sepEndBy p sepp (cs, line, col) := 
+      case p (cs, line, col) of
+        (Err _, _, _, _) => (Ok [], cs, line, col)
+      | (Ok x, cs', line', col') =>
+          case sepp (cs', line', col') of
+            (Err _, _, _, _) =>
+              (Ok [x], cs', line', col')
+          | (Ok _, cs'', line'', col'') =>
+              map (fn xs => x::xs) (sepEndBy p sepp) (cs'', line'', col'')
+  (* manyTill: ('a, 'b) parser -> ('c, 'b) parser -> ('a list, 'b) parser
+    * `manyTill p endp`
+    * Until `endp` succeeds, run parser `p` and only keeps its results. When
+    * `endp` fails, whether or not it consumes input, this function backtracks
+    * and then applies `p`.
+    *)
+  Definition manyTill p endp stream := 
+      case endp stream of
+        (Ok _, cs', line', col') => (Ok [], cs', line', col')
+      | (Err _, _, _, _) =>
+          case p stream of
+            (Err err, cs', line', col') =>
+              (Err err, cs', line', col')
+          | (Ok x, cs', line', col') =>
+              map (fn xs => x::xs) (manyTill p endp) (cs', line', col')
+              (* let
+                  val (xsr, cs'', line'', col'') := 
+                      manyTill p endp (cs', line', col')
+              in
+                  case xsr of
+                    Ok xs => (Ok (x::xs), cs'', line'', col'')
+                  | Err err => (Err err, cs'', line'', col'')
+              end *)
+
+  (* ('a, 'c) parser -> ('b, 'c) parser -> ('a, 'c) parser *)
+  Definition followedBy p q = bind p (fn a => return a q)
+
+  (* ('a, char) parser -> ('a, char) parser *)
+  (* Token-based parsing consumes all whitespace after parsing *)
+  Definition token p = followedBy p spaces
+
+  (* (string, char) parser *)
+  Definition symbol s = token (string s)
