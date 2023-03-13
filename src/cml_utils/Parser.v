@@ -201,7 +201,7 @@ Module Type Parser.
     * `eof`
     * A simple parser that succeeds exactly when there is no more input.
     *)
-  Definition eof {A : Type} :=
+  Definition eof :=
     fun (stream : stream string) =>
       match stream with
       | (cs, line, col) =>
@@ -211,9 +211,15 @@ Module Type Parser.
         end
       end.
 
-  (* TODO: THIS DOESNT WORK *) 
-  (* Lemma consuming_parser_eof : forall {A : Type},
-    consuming_parser eof. *)
+  Lemma consuming_parser_eof : forall `{EqClass cml_unit},
+    consuming_parser eof.
+  Proof.
+    econstructor; intros; cbv in *; destruct cs.
+    - inv H0. eauto.
+    - cp_solver.
+  Qed.
+
+  Hint Resolve consuming_parser_eof : CP_db.
   
   (* seq: parser A B -> parser C B -> parser C B
     * `seq p1 p2`
@@ -223,7 +229,20 @@ Module Type Parser.
   Definition seq {A B C: Type} `{EqClass A, EqClass B, EqClass C}
       (p1 : parser A B) (p2 : parser C B) (CP1 : consuming_parser p1) (CP2 : consuming_parser p2) : (parser C B) :=
     fun (s : stream B) => 
-      bind p1 (fun _ => p2) s.
+      bind p1 (fun _ => p2) CP1 (fun _ => CP2) s.
+
+  Lemma consuming_parser_seq : forall {A B C: Type} `{EqClass A, EqClass B, EqClass C}
+      (p1 : parser A B) (p2 : parser C B) (CP1 : consuming_parser p1) (CP2 : consuming_parser p2),
+    consuming_parser (seq p1 p2 CP1 CP2).
+  Proof.
+    econstructor; intros. 
+    pose proof (@consuming_parser_bind _ _ _ _ _ _ p1 CP1 (fun _ => p2) (fun _ => CP2)).
+    inv H3.
+    cbv in H2. pose proof (consuming_always0 cs line col cs' line' col').
+    eapply H3. cbv. eauto.
+  Qed.
+
+  Hint Resolve consuming_parser_seq : CP_db.
 
   (* satisfy: (char -> bool) -> (char, char) parser
     * `satisfy pred`
@@ -246,13 +265,46 @@ Module Type Parser.
         end
       end.
 
+  Lemma consuming_parser_satisfy : forall pred,
+    consuming_parser (satisfy pred).
+  Proof.
+    econstructor; intros.
+    cbv in H. destruct cs eqn:CS.
+    - inv H.
+    - destruct (pred a).
+      * destruct (match a with
+          | Ascii a0 a1 a2 a3 a4 a5 a6 a7 =>
+              if
+              if
+                if
+                if
+                  if
+                  if if if a0 then false else true then if a1 then true else false else false
+                  then if a2 then false else true
+                  else false
+                  then if a3 then true else false
+                  else false
+                then if a4 then false else true
+                else false
+                then if a5 then false else true
+                else false
+              then if a6 then false else true
+              else false
+              then if a7 then false else true
+              else false
+          end); inv H; cbv; lia.
+      * inv H.
+  Qed.
+  
+  Hint Resolve consuming_parser_satisfy : CP_db.
+
     (* label: string -> ('a, 'b) parser -> ('a, 'b) parser
     * `label errMsg p`
     * Runs parser `p` and if it fails without consuming input, then the error
     * message is replaced by `errMsg`.
     *)
   Definition label {A B : Type} `{EqClass A, EqClass B}
-      (errMsg : string) (p : parser A B) : (parser A B) :=
+      (errMsg : string) (p : parser A B) (CP : consuming_parser p) : (parser A B) :=
     fun (s : stream _) =>
       match s with
       | (cs, line, col) =>
@@ -265,18 +317,38 @@ Module Type Parser.
         end
       end.
 
+  Lemma consuming_parser_label : forall {A B : Type} `{EqClass A, EqClass B}
+      (errMsg : string) (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (label errMsg p CP).
+  Proof.
+    econstructor; intros.
+    inv H1.
+    destruct (p (cs, line, col)) eqn:PC, p0, p0, r.
+    - destruct CP. pose proof (consuming_always0 _ _ _ _ _ _ _ PC); inv H3; eauto.
+    - destruct ((line =? n0)%nat && ((col =? n)%nat && general_list_eq_class_eqb cs l)); inv H3.
+  Qed.
+
+  Hint Resolve consuming_parser_label : CP_db.
+
   (* parser_return: 'a -> ('b, 'c) parser -> ('a, 'c) parser
     * `parser_return x p`
     * Runs parser `p` and if it succeeds replace the result with `x`.
     *)
   Definition parser_return {A B C : Type} `{EqClass A, EqClass B, EqClass C}
-      (x : A) (p : parser B C) : (parser A C) :=
+      (x : A) (p : parser B C) (CP1 : consuming_parser p) : (parser A C) :=
     fun (stream : stream _) =>
       match p stream with
       | (Ok _, cs', line', col') => (Ok x, cs', line', col')
       | (Err err, cs', line', col') =>
           (Err err, cs', line', col')
       end.
+
+  Lemma consuming_parser_parser_return : forall {A B C : Type} `{EqClass A, EqClass B, EqClass C}
+      (x : A) (p : parser B C) (CP1 : consuming_parser p),
+    consuming_parser (parser_return x p CP1).
+  Proof.
+    cp_solver.
+  Qed.
 
   (* char: char -> (char, char) parser
     * `char c`
@@ -285,7 +357,7 @@ Module Type Parser.
     *)
   Definition char (inc : ascii) : (parser ascii ascii) :=
     label ("Expected to see character '" ++ (String inc EmptyString) ++ "'.")
-        (satisfy (fun op => (eqb op inc)%char)).
+        (satisfy (fun op => (eqb op inc)%char)) (consuming_parser_satisfy (fun op => (eqb op inc)%char)).
   
   (* notChar: char -> (char, char) parser
     * `notChar c`
@@ -294,7 +366,7 @@ Module Type Parser.
     *)
   Definition notChar (inc : ascii) : (parser ascii ascii) :=
     label ("Expected not to see character '" ++ (String inc EmptyString) ++ "'.")
-        (satisfy (fun op => (negb (eqb op inc)))).
+        (satisfy (fun op => (negb (eqb op inc)))) (consuming_parser_satisfy (fun op => (negb (eqb op inc)))).
 
   (* oneOf: char list -> (char, char) parser
     * `oneOf cs`
@@ -304,7 +376,8 @@ Module Type Parser.
     *)
   Definition oneOf (incs : list ascii) : (parser ascii ascii) :=
       label ("Expected one of the following characters """ ++ (String.string_of_list_ascii incs) ++ """.")
-          (satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) (inc) incs) then true else false)).
+          (satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) (inc) incs) then true else false))
+          (consuming_parser_satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) (inc) incs) then true else false)).
 
   (* noneOf: char list -> (char, char) parser
     * `noneOf cs`
@@ -314,75 +387,88 @@ Module Type Parser.
     *)
   Definition noneOf (incs : list ascii) : (parser ascii ascii) :=
       label ("Expected not to see any of the following characters """ ++ (String.string_of_list_ascii incs) ++ """.")
-          (satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) inc incs) then false else true)).
+          (satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) inc incs) then false else true))
+          (consuming_parser_satisfy (fun inc => if (List.in_dec (EqClass_impl_DecEq _) inc incs) then false else true)).
 
   (* anyChar: (char, char) parser
     * A simple parser that succeeds so long as there is another character in
     * the stream. Does not consume input upon failure.
     *)
-  Definition anyChar := label "Expected any character." (satisfy (fun x => true)).
+  Definition anyChar : (parser ascii ascii) := 
+    label "Expected any character." (satisfy (fun x => true))
+      (consuming_parser_satisfy (fun x => true)).
 
   (* digit: (char, char) Parser
     * A simple parser that succeeds upon seeing a digit, '0'..'9'. Does not
     * consume input upon failure.
     *)
-  Definition digit := label "Expected a digit." (satisfy CharExtra.isDigit).
+  Definition digit : (parser ascii ascii) := 
+    label "Expected a digit." (satisfy CharExtra.isDigit)
+      (consuming_parser_satisfy CharExtra.isDigit).
 
 
   (* octalDigit: (char, char) Parser
     * A simple parser that succeeds upon seeing an octal numeral, '0'..'7'.
     * Does not consume input upon failure.
     *)
-  Definition octalDigit := 
-      label "Expected an octal digit." (satisfy CharExtra.isOctal).
+  Definition octalDigit : (parser ascii ascii) := 
+      label "Expected an octal digit." (satisfy CharExtra.isOctal)
+        (consuming_parser_satisfy CharExtra.isOctal).
   (* hexDigit: (char, char) Parser
     * A simple parser that succeeds upon seeing a hexadecimal numeral,
     * '0'..'9' or 'a'..'f' or 'A'..'F'. Does not consume input upon
     * failure.
     *)
-  Definition hexDigit := 
-      label "Expected a hexidecimal digit." (satisfy CharExtra.isHex).
+  Definition hexDigit : (parser ascii ascii) := 
+      label "Expected a hexidecimal digit." (satisfy CharExtra.isHex)
+        (consuming_parser_satisfy CharExtra.isHex).
   (* lower: (char, char) Parser
     * A simple parser that succeeds upon seeing a lowercase ASCII
     * character, 'a'..'z'. Does not consume input upon failure.
     *)
-  Definition lower := 
+  Definition lower : (parser ascii ascii) := 
       label
           "Expected a lower-case ascii character."
-          (satisfy CharExtra.isLower).
+          (satisfy CharExtra.isLower)
+        (consuming_parser_satisfy CharExtra.isLower).
   (* upper: (char, char) Parser
     * A simple parser that succeeds upon seeing an uppercase ASCII
     * character, 'A'..'Z'. Does not consume input upon failure.
     *)
-  Definition upper := 
+  Definition upper : (parser ascii ascii) := 
       label
           "Expected an upper-case ascii character."
-          (satisfy CharExtra.isUpper).
+          (satisfy CharExtra.isUpper)
+        (consuming_parser_satisfy CharExtra.isUpper).
+
   (* letter: (char, char) Parser
     * A simple parser that succeeds upon seeing an ASCII alphabet
     * character, 'a'..'z' or 'A'..'Z'. Does not consume input upon failure.
     *)
-  Definition letter := 
+  Definition letter : (parser ascii ascii) := 
       label
           "Expected an ascii alphabet character."
-          (satisfy CharExtra.isAlpha).
+          (satisfy CharExtra.isAlpha)
+        (consuming_parser_satisfy CharExtra.isAlpha).
   (* alphaNum: (char, char) Parser
     * A simple parser that succeeds upon seeing an ASCII digit or alphabet
     * character: 'a'..'z', 'A'..'Z', or '0'..'9'. Does not consume input
     * upon failure.
     *)
-  Definition alphaNum := 
+  Definition alphaNum : (parser ascii ascii) := 
       label
           "Expected an ascii alphanumeric character."
-          (satisfy CharExtra.isAlphaNum).
+          (satisfy CharExtra.isAlphaNum)
+        (consuming_parser_satisfy CharExtra.isAlphaNum).
   (* space: (char, char) Parser
     * A simple parser that succeeds upon seeing any ASCII whitespace
     * characters. Does not consume input upon failure.
     *)
-  Definition space := 
+  Definition space : (parser ascii ascii) := 
       label
           "Expected an ascii whitespace character."
-          (satisfy CharExtra.isSpace).
+          (satisfy CharExtra.isSpace)
+        (consuming_parser_satisfy CharExtra.isSpace).
 
   (*
     Helper for moving the lines and columns while parsing
@@ -410,22 +496,34 @@ Module Type Parser.
   (* 
     Drops the first 'n' elements of a list (if it goes off the end it just returns nill)
   *)
-  Fixpoint list_drop {A : Type} `{EqClass A} (l : list A) (n : nat) : list A :=
+  Fixpoint list_drop {A : Type} `{EqClass A} (n : nat) (l : list A) : list A :=
     match n with
     | 0 => l
     | S n' => 
         match l with
         | nil => nil (* TODO: Does this fit spec? *)
-        | h :: t => list_drop t n'
+        | h :: t => list_drop n' t
         end
     end.
+
+  Lemma list_drop_sn : forall {A : Type} `{EqClass A} ls,
+    (forall n, length (list_drop (S n) ls) < length ls) \/ ls = nil.
+  Proof.
+    induction ls; intros.
+    - eauto.
+    - destruct IHls.
+      * left; intros; destruct n; simpl; try lia.
+        destruct ls; try lia.
+        pose proof (H0 n). simpl in *. lia.
+      * subst. left; simpl. destruct n; eauto.
+  Qed.
 
   (* string: string -> (string, char) parser
   * `string str`
   * A parser that succeeds when the characters of `str` are the characters
   * that appear next in the stream. Does not consume input upon failure.
   *)
-  Definition parser_string (str : string) : (parser string ascii) :=
+  Definition parser_string (str : string) (HS : str <> EmptyString): (parser string ascii) :=
     fun (s : stream _) =>
       match s with
       | (cs, line, col) =>
@@ -434,10 +532,25 @@ Module Type Parser.
             then
                 let (line', col') := advancePos chars (line, col)
                 in
-                    (Ok str, list_drop cs (String.length str), line', col')
+                    (Ok str, list_drop (String.length str) cs, line', col')
             else (Err ("Expect the literal string """ ++ str ++ """"),
                     cs, line, col)
       end.
+
+  Lemma consuming_parser_parser_string : forall (str : string) (HS : str <> EmptyString),
+    consuming_parser (parser_string str HS).
+  Proof.
+    econstructor; intros.
+    inv H.
+    destruct str eqn:STR; try congruence;
+    destruct (list_drop_sn cs);
+    destruct (list_prefix (String.list_ascii_of_string (String a s)) cs) eqn:CS; 
+    try (cp_solver; eauto; lia); try congruence.
+    destruct (advancePos (String.list_ascii_of_string (String a s)) (line, col)) eqn:AP; inv H1.
+    destruct cs; eauto.
+  Qed.
+
+  Hint Resolve consuming_parser_parser_string : CP_db.
 
   Definition carriage_return : ascii := "013".
 
@@ -445,9 +558,14 @@ Module Type Parser.
     * A simple parser that succeeds upon seeing '\r\n' and returns '\n'. Does
     * not consume input upon failure.
     *)
+  Example not_empty_1 :
+    String carriage_return (String newline EmptyString) <> EmptyString.
+  Proof. intros HC; inv HC. Qed.
+
   Definition crlf :=
       label "Expected a carriage return followed by a line feed."
-          (parser_return newline (parser_string (String carriage_return (String newline EmptyString)))).
+          (parser_return newline (parser_string (String carriage_return (String newline EmptyString)) not_empty_1) 
+          (consuming_parser_parser_string (String carriage_return (String newline EmptyString)) not_empty_1)).
 
   (* choice: (('a, 'b) parser) list -> ('a, 'b) parser
     * `choice ps`
@@ -455,31 +573,61 @@ Module Type Parser.
     * fails and consumes input. Should the next parser to try fails and
     * consumes input, then this function will do the same.
     *)
-  Fixpoint choice {A B : Type} `{EqClass A, EqClass B} 
-      (ps : list (parser A B)) :=
-    fun stream =>
-      match stream with
+  Lemma weaken_CPL : forall {A B : Type} `{EqClass A, EqClass B} 
+      (ps : list (parser A B)) p' ps',
+    ps = p' :: ps' ->
+    (forall p, In p ps -> consuming_parser p) ->
+    (forall p, In p ps' -> consuming_parser p).
+  Proof.
+    intros.
+    eapply H2. subst. simpl; eauto.
+  Qed.
+
+  Fixpoint choice {A B : Type} `{HA : EqClass A} `{HB : EqClass B} 
+      (ps : list (parser A B)) (CPL : forall p, In p ps -> consuming_parser p) (stream : stream B) {struct ps} 
+      : (res A string * list B * nat * nat).
+  refine (
+      (match stream with
       | (cs, line, col) =>
-        match ps with
-        | nil => (Err "No more parsers to try", cs, line, col)
+        match ps as l return ps = l -> _  with
+        | nil => fun Hyp => (Err "No more parsers to try", cs, line, col)
         | p::ps' =>
-          match p (cs, line, col) with
-          | (Ok x, cs', line', col') =>
-              (Ok x, cs', line', col')
-          | (Err err, cs', line', col') =>
-              if (eqb line line') && (eqb col col') && (eqb cs cs')
-              then choice ps' (cs, line, col)
-              else (Err err, cs', line', col')
-          end
+          fun Hyp => 
+            match p (cs, line, col) with
+            | (Ok x, cs', line', col') =>
+                (Ok x, cs', line', col')
+            | (Err err, cs', line', col') =>
+                if (eqb line line') && (eqb col col') && (eqb cs cs')
+                then @choice A B HA HB ps' (weaken_CPL ps p ps' Hyp CPL) (cs, line, col)
+                else (Err err, cs', line', col')
+            end
       end
-    end.
+    end) (eq_refl ps)
+  ).
+  Defined.
+
+  Lemma consuming_parser_choice : forall {A B : Type} `{HA : EqClass A} `{HB : EqClass B} 
+      (ps : list (parser A B)) (CPL : forall p, In p ps -> consuming_parser p) (stream : stream B),
+    consuming_parser (fun stream => choice ps CPL stream).
+  Proof.
+    econstructor. generalize dependent CPL. generalize dependent stream0.
+    induction ps as [| a l]; simpl in *; intros.
+    - inv H.
+    - destruct (a (cs, line, col)) eqn:P1, p, p, r.
+      * eapply CPL; inv H; eauto.
+      * destruct ((line =? n0)%nat && (col =? n)%nat && general_list_eq_class_eqb cs l0);
+        try congruence.
+        eapply IHl; eauto.
+  Qed.
+
+  Hint Resolve consuming_parser_choice : CP_db.
 
   (* try: ('a, 'b) parser -> ('a, 'b) parser
     * `try p`
     * Tries parser `p` remembering the state of the stream so that if it fails
     * and consumes input, then `try p` fails but does _not_ consume input.
     *)
-  Definition try {A B : Type} `{EqClass A, EqClass B} (p : parser A B) := 
+  Definition parser_try {A B : Type} `{EqClass A, EqClass B} (p : parser A B) (CP : consuming_parser p) := 
     fun stream =>
       match stream with
       | (cs, line, col) =>
@@ -488,6 +636,14 @@ Module Type Parser.
         | (Ok x, cs', line', col') => (Ok x, cs', line', col')
         end
       end.
+
+  Lemma consuming_parser_parser_try : forall {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
+      (CP : consuming_parser p),
+    consuming_parser (parser_try p CP).
+  Proof.
+    cp_solver.
+  Qed.
+
   (* many: ('a, 'b) parser -> ('a list, 'b) parser
     * `many p`
     * Tries parser `p` zero or more times. As long as `p` succeeds, `many p`
@@ -497,30 +653,77 @@ Module Type Parser.
     *)
   Require Import Program.
   Program Fixpoint many_sub_parser {A B : Type} `{EqClass A, EqClass B}
-      (p : parser A B) (cs : list B) line col {measure (List.length cs)} : ((res (list A) string) * (list B) * nat * nat) :=
-      match p (cs, line, col) with
-      | (Ok x, cs', line', col') => 
-          match many_sub_parser p cs' line' col' with
-          | ((Ok xs), cs'', line'', col'') => (Ok (x::xs), cs'', line'', col'')
-          | (Err _, _, _ , _) => (Ok nil, cs, line, col)
-          end
-      | (Err _, _, _, _) => (Ok nil, cs, line, col)
+      (p : parser A B) (CP : consuming_parser p) (cs : list B) line col {measure (List.length cs)} : ((res (list A) string) * (list B) * nat * nat) :=
+      match cs with
+      | nil => (* TODO: Is this valid? *)
+          (Ok nil, cs, line, col)
+      | c :: cs' =>
+        match p (cs, line, col) with
+        | (Ok x, cs', line', col') => 
+            match many_sub_parser p CP cs' line' col' with
+            | ((Ok xs), cs'', line'', col'') => (Ok (x::xs), cs'', line'', col'')
+            | (Err _, _, _ , _) => (Ok nil, cs, line, col)
+            end
+        | (Err _, _, _, _) => (Ok nil, cs, line, col)
+        end
       end.
-  (* TODO: This is a big admit, this is certainly NOT TRUE, but we need it for now *)
-  Admit Obligations.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    destruct CP.
+    destruct (consuming_always0 _ _ _ _ _ _ _ Heq_anonymous); eauto. 
+    inv Heq_anonymous.
+    simpl. lia.
+  Qed.
+(* 
+  Lemma consuming_parser_many_sub_parser : forall {A B : Type} `{EqClass A, EqClass B}
+      (p : parser A B) (CP : consuming_parser p) (cs : list B) line col,
+    consuming_parser (fun _ => many_sub_parser p CP cs line col).
+  Proof.
+    econstructor. induction cs; intros.
+    - cbv in H1. inv H1. eauto.
+    - cbv in H1. *)
 
-  Definition many {A B : Type} `{EqClass A, EqClass B} (p : parser A B) : (parser (list A) B) := 
+  Definition many {A B : Type} `{EqClass A, EqClass B} (p : parser A B) (CP : consuming_parser p) : (parser (list A) B) := 
     fun stream => 
       let (csLine, col) := stream in
       let (cs, line) := csLine in
-        many_sub_parser p cs line col.
-      
+        many_sub_parser p CP cs line col.
+
+  Lemma consuming_parser_many : forall {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
+      (CP : consuming_parser p),
+    consuming_parser (many p CP).
+  Proof.
+    (* econstructor. intros cs.
+    generalize dependent p.
+    induction cs; intros; simpl in *.
+    - cbv in H1. inv H1; eauto.
+    - destruct (p ((a :: cs), line, col)) eqn:Ps.
+      cbv delta [many_sub_parser] in H1. simpl in H1.
+      cbv delta [many_sub_parser_func ] in H1. simpl in H1.
+    simpl in H1. *)
+  Admitted.
+
   (* many1: ('a, 'b) parser -> ('a list, 'b) parser
     * `many1 p`
     * Tries parser `p` one or more times. As long as `p` succeeds, `many1 p`
     * will continue to consume input.
     *)
-  Definition many1 p stream := bind p (fun x => map (fun xs => x::xs) (many p)) stream.
+  Definition many1 {A B : Type} `{EqClass A, EqClass B} (p : parser A B) (CP : consuming_parser p) 
+      : (parser (list A) B) :=
+    fun stream =>
+      bind p (fun x => map (fun xs => x::xs) (many p CP) (consuming_parser_many p CP)) CP 
+        (fun x => (consuming_parser_map (fun xs => x::xs) (many p CP) (consuming_parser_many p CP))) stream.
+
+  Lemma consuming_parser_many1 : forall {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
+      (CP : consuming_parser p),
+    consuming_parser (many1 p CP).
+  Proof.
+    econstructor; intros.
+    unfold many1 in H1. 
+    eapply (@consuming_parser_bind A B (list A) _ _ _ p CP _ _).
+    eapply H1.
+  Qed.
+
   (* skipMany: ('a, 'b) parser -> (unit, 'b) parser
     * `skipMany p`
     * Tries parser `p` zero or more times, discarding the results. As long as
@@ -528,32 +731,82 @@ Module Type Parser.
     * `p` fails and does not consume input. Should `p` fail and consume input,
     * then so does this function.
     *)
-  Fixpoint skipMany p (cs, line, col) := 
+  Program Fixpoint skipMany_rec {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
+      (CP : consuming_parser p) cs line col {measure (length cs)} := 
+    match cs with
+    | nil => (Err "Ran out of tokens in skipMany_rec", cs, line, col)
+    | c :: cs' =>
       match p (cs, line, col) with
-      | (Ok _, cs', line', col') => skipMany p (cs', line', col')
+      | (Ok _, cs', line', col') => skipMany_rec p CP cs' line' col'
       | (Err err, cs', line', col') =>
-          if line = line' andalso col = col' andalso cs = cs'
-          then (Ok (), cs, line, col)
+          if (eqb line line') && (eqb col col') && (eqb cs cs')
+          then (Ok unit_val, cs, line, col)
           else (Err err, cs', line', col')
+      end
+    end.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    destruct CP.
+    pose proof (consuming_always0 _ _ _ _ _ _ _ Heq_anonymous).
+    destruct H1; subst; eauto.
+    inv Heq_anonymous. 
+    simpl; lia.
+  Qed.
+
+  Definition skipMany {A B : Type} `{EqClass A, EqClass B} (p : parser A B) (CP : consuming_parser p) := 
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        skipMany_rec p CP cs line col
       end.
+
+  Lemma consuming_parser_skipMany : forall {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
+      (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (skipMany p CP).
+  Proof.
+  Admitted.
+
   (* spaces: (unit, char) parser
     * `spaces = skipMany space`
     * Skips zero or more ASCII whitespace characters. Does not consume input
     * upon failure.
     *)
-  val spaces = skipMany space
+  Definition spaces `{EqClass cml_unit} : (parser cml_unit ascii) := 
+    skipMany space (consuming_parser_label _ _ _).
   (* count: int -> ('a, 'b) parser -> ('a list, 'b) parser
     * `count n p`
     * Applies the parser `p` at most `n` times or until the first time `p`
     * fails. Consumes input whenever `p` does so.
     *)
-  Definition count n p (cs, line, col) := 
+  Fixpoint count_rec {A B : Type} `{EqClass A, EqClass B} (n : nat) 
+      (p : parser A B) (CP : consuming_parser p) {struct n} : (parser (list A) B) :=
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        match n with
+        | 0 => (Ok nil, cs, line, col)
+        | (S n') => 
+            bind p
+                  (fun x => map (fun xs => x::xs) (count_rec n' p CP) (cp_count_rec n' p CP))
+                  CP
+                  _
+                  (cs, line, col)
+        end
+      end
+    with cp_count_rec {A B : Type} `{EqClass A, EqClass B} (n : nat)
+        (p : parser A B) (CP : consuming_parser p) : consuming_parser (count_rec n p CP). Admitted.
+
+  Definition count (n : nat) (p : parser A B) : (parser (list A) B) := 
+    fun stream =>
+    match stream with
+    | (cs, line, col) =>
       if n <= 0
-      then (Ok [], cs, line, col)
+      then (Ok nil, cs, line, col)
       else
           bind p
-              (fn x => map (fn xs => x::xs) (count (n - 1) p))
+              (fun x => map (fun xs => x::xs) (count (n - 1) p))
               (cs, line, col)
+    end.
   (* between: ('a, 'b) parser -> ('c, 'b) parser -> ('d, 'b) parser -> ('d, 'b) parser
     * `between open close p`
     * Runs parser `open`, then runs `p`, then `close` keeping only the result
