@@ -104,7 +104,7 @@ Module Type Parser.
     ).
 
   Lemma consuming_parser_bind : forall {A B C : Type} `{HA : EqClass A, HB : EqClass B, HC : EqClass C} 
-      (p : parser A B) {CP : consuming_parser p} (funcp : (A -> (parser C B))) {FuncCP : forall a : A, consuming_parser (funcp a)},
+      (p : parser A B) (funcp : (A -> (parser C B))) (CP : consuming_parser p) (FuncCP : forall a : A, consuming_parser (funcp a)),
     consuming_parser (bind p funcp CP FuncCP).
   Proof.
     intros. 
@@ -236,7 +236,7 @@ Module Type Parser.
     consuming_parser (seq p1 p2 CP1 CP2).
   Proof.
     econstructor; intros. 
-    pose proof (@consuming_parser_bind _ _ _ _ _ _ p1 CP1 (fun _ => p2) (fun _ => CP2)).
+    pose proof (@consuming_parser_bind _ _ _ _ _ _ p1 (fun _ => p2) CP1 (fun _ => CP2)).
     inv H3.
     cbv in H2. pose proof (consuming_always0 cs line col cs' line' col').
     eapply H3. cbv. eauto.
@@ -720,7 +720,7 @@ Module Type Parser.
   Proof.
     econstructor; intros.
     unfold many1 in H1. 
-    eapply (@consuming_parser_bind A B (list A) _ _ _ p CP _ _).
+    eapply (@consuming_parser_bind A B (list A) _ _ _ p _ CP _).
     eapply H1.
   Qed.
 
@@ -783,7 +783,7 @@ Module Type Parser.
     fun (stream : stream B) =>
       match stream with
       | (cs, line, col) =>
-        match n with
+        match n with (* Note: This had to be refactored slightly, should still work roughly the same though *)
         | 0 => (Err "Never go 0", cs, line, col)
         | S n' =>
           match n' with
@@ -843,14 +843,58 @@ Module Type Parser.
   Proof.
     cbv delta [count]. simpl. intros. eapply consuming_parser_count_rec.
   Qed.
-  
+
   (* between: ('a, 'b) parser -> ('c, 'b) parser -> ('d, 'b) parser -> ('d, 'b) parser
     * `between open close p`
     * Runs parser `open`, then runs `p`, then `close` keeping only the result
     * of `p` upon success.
     *)
-  Definition between openp closep p stream := 
-      bind openp (fn _ => bind p (fn x => return x closep)) stream
+  Definition between {A B C D : Type} `{EqClass A, EqClass B, EqClass C, EqClass D}
+      (openp : parser A B) (closep : parser C B) (p : parser D B) 
+      (COP : consuming_parser openp) (CCP : consuming_parser closep) (CP : consuming_parser p) : (parser D B) :=
+    fun stream =>
+      bind 
+        openp
+        (fun _ => 
+          bind
+            p
+            (fun x => 
+              parser_return
+                x
+                closep
+                CCP
+            )
+            CP
+            (fun x => 
+              consuming_parser_parser_return x closep CCP
+            )
+        )
+        COP
+        (fun _ => 
+          consuming_parser_bind
+            p
+            (fun x => 
+              parser_return
+                x
+                closep
+                CCP
+            )
+            CP
+            (fun x => 
+              consuming_parser_parser_return x closep CCP
+            )
+        )
+        stream.
+
+  Lemma consuming_parser_between : forall {A B C D : Type} `{EqClass A, EqClass B, EqClass C, EqClass D}
+      (openp : parser A B) (closep : parser C B) (p : parser D B) 
+      (COP : consuming_parser openp) (CCP : consuming_parser closep) (CP : consuming_parser p),
+    consuming_parser (between openp closep p COP CCP CP).
+  Proof.
+    cbv delta [between]; simpl. intros.
+    eapply consuming_parser_bind.
+  Qed.
+
   (* option: 'a -> ('a, 'b) parser -> ('a, 'b) parser
     * `option x p`
     * Runs parser `p` and succeeds returning `x` should `p` fail and not
@@ -858,45 +902,58 @@ Module Type Parser.
     * result `p` produces. If `p` fails and consumes input, then this function
     * does the same.
     *)
-  Definition option x p (cs, line, col) := 
-      case p (cs, line, col) of
-        (Ok y, cs', line', col') => (Ok y, cs', line', col')
-      | (Err err, cs', line', col') =>
-          if line = line' andalso col = col' andalso cs = cs'
-          then (Ok x, cs, line, col)
-          else (Err err, cs', line', col')
-  (* optionOpt: ('a, 'b) parser -> ('a option, 'b) parser
-    * Runs parser `p` and succeeds returning `None` should `p` fail and not
-    * consume input.
-    *)
-  (* Definition optionOpt p (cs, line, col) := 
-      case p (cs, line, col) of
-        (Ok x, cs', line', col') => (Ok (Some x), cs', line', col')
-      | (Err err, cs', line', col') =>
-          if line = line' andalso col = col' andalso cs = cs'
-          then (Ok None, cs, line, col)
-          else (Err err, cs', line', col') *)
+  Definition parser_option {A B : Type} `{EqClass A, EqClass B} 
+      (x : A) (p : parser A B) (CP : consuming_parser p) : (parser A B) :=
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        match p (cs, line, col) with
+        | (Ok y, cs', line', col') => (Ok y, cs', line', col')
+        | (Err err, cs', line', col') =>
+            if (eqb line line') && (eqb col col') && (eqb cs cs')
+            then (Ok x, cs, line, col)
+            else (Err err, cs', line', col')
+        end
+      end.
+(* TODO: This is not a consuming_parser BY SPEC!
+  Lemma consuming_parser_parser_option : forall {A B : Type} `{EqClass A, EqClass B} 
+      (x : A) (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (parser_option x p CP).
+  Proof.
+    econstructor; intros. simpl in H1.
+    destruct (p (cs, line, col)) eqn:PS, p0, p0, r.
+    - eapply CP. inv H1; eauto.
+    -   *)
+    
   (* sepBy: ('a, 'b) parser -> ('c, 'b) parser -> ('a list, 'b) parser
     * `sepBy p sep`
     * Runs zero or more iterations of `p` separated by iterations of `sep` and
     * only the results of `p` are retained. Does not consume input upon
     * failure.
     *)
-  Definition sepBy p sepp (cs, line, col) := 
-      case p (cs, line, col) of
-        (Err _, _, _, _) => (Ok [], cs, line, col)
-      | (Ok x, cs', line', col') =>
-          case sepp (cs', line', col') of
-            (Err _, _, _, _) =>
-              (Ok [x], cs', line', col')
-          | (Ok _, cs'', line'', col'') =>
-              map (fn xs => x::xs) (sepBy p sepp) (cs'', line'', col'')
-              (* let
-                  val (Ok xs, cs''', line''', col''') := 
-                      sepBy p sepp (cs'', line'', col'')
-              in
-                  (Ok (x::xs), cs''', line''', col''')
-              end *)
+  Definition sepBy {A B C : Type} `{EqClass A, EqClass B, EqClass C} 
+      (p : parser A B) (sepp : parser C B) (CP : consuming_parser p) (CSP : consuming_parser sepp) 
+      : (parser (list A) B) := 
+    fun stream =>
+      match stream with
+      | (cs, line, col) =>
+        match p (cs, line, col) with
+        | (Err _, _, _, _) => (Ok nil, cs, line, col)
+        | (Ok x, cs', line', col') =>
+            match sepp (cs', line', col') with
+            | (Err _, _, _, _) =>
+                (Ok (x :: nil), cs', line', col')
+            | (Ok _, cs'', line'', col'') =>
+                map (fun xs => x::xs) (sepBy p sepp) (cs'', line'', col'')
+            end
+        end
+      end.
+                (* let
+                    val (Ok xs, cs''', line''', col''') := 
+                        sepBy p sepp (cs'', line'', col'')
+                in
+                    (Ok (x::xs), cs''', line''', col''')
+                end *)
   (* sepEndBy: ('a, 'b) parser -> ('c, 'b) parser -> ('a list, 'b) parser
     * `sepEndBy p sep`
     * Runs zero or more iterations of `p` interspersed with `sep` and an
