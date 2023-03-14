@@ -778,35 +778,72 @@ Module Type Parser.
     * Applies the parser `p` at most `n` times or until the first time `p`
     * fails. Consumes input whenever `p` does so.
     *)
-  Fixpoint count_rec {A B : Type} `{EqClass A, EqClass B} (n : nat) 
+  Fixpoint count_rec {A B : Type} `{EqClass A, EqClass B} (n : nat)
       (p : parser A B) (CP : consuming_parser p) {struct n} : (parser (list A) B) :=
-    fun stream =>
+    fun (stream : stream B) =>
       match stream with
       | (cs, line, col) =>
         match n with
-        | 0 => (Ok nil, cs, line, col)
-        | (S n') => 
-            bind p
-                  (fun x => map (fun xs => x::xs) (count_rec n' p CP) (cp_count_rec n' p CP))
-                  CP
-                  _
-                  (cs, line, col)
+        | 0 => (Err "Never go 0", cs, line, col)
+        | S n' =>
+          match n' with
+          | 0 => 
+            match (p (cs, line, col)) with
+            | (Ok res, cs', line', col') => (Ok (res :: nil), cs', line', col')
+            | (Err err, cs', line', col') => (Err err, cs', line', col')
+            end
+          | S n0 =>
+              match (p (cs, line, col)) with
+              | (Ok res, cs', line', col') =>  
+                  match ((count_rec n' p CP) (cs', line', col')) with
+                  | (Ok res', cs'', line'', col'') => (Ok (res :: res'), cs'', line'', col'')
+                  | (Err err, cs'', line'', col'') => (Err err, cs'', line'', col'')
+                  end
+              | (Err err, cs', line', col') => (Err err, cs', line', col')
+              end
+          end
         end
-      end
-    with cp_count_rec {A B : Type} `{EqClass A, EqClass B} (n : nat)
-        (p : parser A B) (CP : consuming_parser p) : consuming_parser (count_rec n p CP). Admitted.
+      end.
 
-  Definition count (n : nat) (p : parser A B) : (parser (list A) B) := 
-    fun stream =>
-    match stream with
-    | (cs, line, col) =>
-      if n <= 0
-      then (Ok nil, cs, line, col)
-      else
-          bind p
-              (fun x => map (fun xs => x::xs) (count (n - 1) p))
-              (cs, line, col)
-    end.
+  Lemma consuming_parser_count_rec : forall {A B : Type} `{EqClass A, EqClass B} (n : nat)
+      (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (count_rec n p CP).
+  Proof.
+    (* assert (n = 0 \/ n = 1 \/ exists n', n = S (S n')) *)
+    econstructor.
+    generalize dependent p.
+    induction n; intros.
+    - inv H1.
+    - simpl in H1. 
+      destruct n eqn:N.
+      * (* n = 0*)
+        destruct (p (cs, line, col)) eqn:PS, p0, p0, r; try inv H1.
+        eapply CP; eauto.
+      * (* n = S n0 *)
+        destruct (p (cs, line, col)) eqn:PS, p0, p0, r.
+        ** (* success *) 
+          destruct (count_rec (S n0) p CP (l, n2, n1)) eqn:PS', p0, p0, r.
+          *** (* count_rec success *)
+              pose proof (IHn p CP l n2 n1 l0 n4 n3 l1 PS'); inv H1;
+              destruct CP;
+              pose proof (consuming_always0 _ _ _ _ _ _ _ PS);
+              destruct H1, H2; eauto; try lia.
+              inv H1. simpl in H2. lia.
+          *** (* count_rec err *) inv H1.
+        ** (* err *) inv H1.
+  Qed.
+
+  Definition count {A B : Type} `{EqClass A, EqClass B} 
+      (n : nat) (p : parser A B) (CP : consuming_parser p) : (parser (list A) B) := 
+    count_rec n p CP.
+
+  Lemma consuming_parser_count : forall {A B : Type} `{EqClass A, EqClass B} 
+      (n : nat) (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (count n p CP).
+  Proof.
+    cbv delta [count]. simpl. intros. eapply consuming_parser_count_rec.
+  Qed.
+  
   (* between: ('a, 'b) parser -> ('c, 'b) parser -> ('d, 'b) parser -> ('d, 'b) parser
     * `between open close p`
     * Runs parser `open`, then runs `p`, then `close` keeping only the result
