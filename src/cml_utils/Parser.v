@@ -931,22 +931,54 @@ Module Type Parser.
     * only the results of `p` are retained. Does not consume input upon
     * failure.
     *)
+  Local Obligation Tactic := idtac.
+  Program Fixpoint sepBy_rec {A B C : Type} `{HA : EqClass A} `{HB : EqClass B} `{HC : EqClass C}
+      (p : parser A B) (sepp : parser C B) (CP : consuming_parser p) (CSP : consuming_parser sepp)
+      (cs : list B) (line col : nat) {measure (length cs)} : (res (list A) string * list B * nat * nat) :=
+    match cs with
+    | nil => (Err "Cannot do SepBy on empty input", cs, line, col)
+    | c::cs' =>
+      match p (cs, line, col) with
+      (* Modified so we must consume at least 1 p *)
+      | (Err m, cs', line', col') => (Err m, cs', line', col')
+      | (Ok x, cs', line', col') =>
+          match sepp (cs', line', col') with
+          | (Err _, _, _, _) => (* optionally consume a sepp *)
+              (Ok (x :: nil), cs', line', col')
+          | (Ok _, cs'', line'', col'') =>
+              (* now look to see if we should recurse *)
+              match (sepBy_rec p sepp CP CSP cs'' line'' col'') with
+              | (Err m, cs''', line''', col''') => 
+                  (* If recursive fails, just use previous results *)
+                  (Ok (x :: nil), cs', line', col')
+              | (Ok rec_rs, cs''', line''', col''') =>
+                  (Ok (x :: rec_rs), cs''', line''', col''')
+              end
+          end
+      end
+    end.
+  Admit Obligations.
+  Next Obligation.
+    intros. subst. 
+    destruct CP, CSP.
+    assert (p ((c :: cs'0), line, col) = (Ok x, cs', line', col')). {
+      eauto.
+    }
+    assert (sepp (cs', line', col') = (Ok wildcard', cs'', line'', col'')). {
+      eauto.
+    }
+    pose proof (consuming_always0 (c :: cs'0) line col cs' line' col' x H).
+    pose proof (consuming_always1 _ _ _ _ _ _ _ H0).
+    destruct H1, H2; subst; simpl in *; try lia.
+  Qed.
+  Admit Obligations.
+  
   Definition sepBy {A B C : Type} `{EqClass A, EqClass B, EqClass C} 
       (p : parser A B) (sepp : parser C B) (CP : consuming_parser p) (CSP : consuming_parser sepp) 
       : (parser (list A) B) := 
     fun stream =>
       match stream with
-      | (cs, line, col) =>
-        match p (cs, line, col) with
-        | (Err _, _, _, _) => (Ok nil, cs, line, col)
-        | (Ok x, cs', line', col') =>
-            match sepp (cs', line', col') with
-            | (Err _, _, _, _) =>
-                (Ok (x :: nil), cs', line', col')
-            | (Ok _, cs'', line'', col'') =>
-                map (fun xs => x::xs) (sepBy p sepp) (cs'', line'', col'')
-            end
-        end
+      | (cs, line, col) => sepBy_rec p sepp CP CSP cs line col
       end.
                 (* let
                     val (Ok xs, cs''', line''', col''') := 
