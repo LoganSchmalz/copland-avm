@@ -1097,4 +1097,4 @@ Module Type Parser.
   Proof.
     intros. eapply consuming_parser_token.
   Qed.
-End Module.
+End Parser.
