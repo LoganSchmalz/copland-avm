@@ -699,13 +699,6 @@ Module Type Parser.
       (CP : consuming_parser p),
     consuming_parser (many p CP).
   Proof.
-    econstructor. intros cs.
-    generalize dependent p.
-    induction cs; intros.
-    - simpl in *. unfold many_sub_parser in H1.
-      cbv delta [many_sub_parser_func] in H1. 
-      simpl in H1.
-      unfold existT in H1.
     (* econstructor. intros cs.
     generalize dependent p.
     induction cs; intros; simpl in *.
@@ -776,6 +769,13 @@ Module Type Parser.
       | (cs, line, col) =>
         skipMany_rec p CP cs line col
       end.
+
+  (* TODO: Another doable but hefty proof *)
+  Lemma consuming_parser_skipMany_rec : forall {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
+      (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (fun s => match s with | (cs, line, col) => skipMany_rec p CP cs line col end).
+  Proof.
+  Admitted.
 
   Lemma consuming_parser_skipMany : forall {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
       (p : parser A B) (CP : consuming_parser p),
