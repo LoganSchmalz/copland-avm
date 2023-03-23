@@ -55,7 +55,7 @@ Module Type Parser.
   Inductive consuming_parser {A B : Type} `{HA : EqClass A} `{HB : EqClass B} (p : parser A B) := {
     consuming_always : (forall cs line col cs' line' col' result,
       p (cs, line, col) = (Ok result, cs', line', col') ->
-      List.length cs' < List.length cs \/ cs' = nil)
+      List.length cs' < List.length cs)
   }.
   (* Definition ParseClass {A B : Type} `{HA : EqClass A} `{HB : EqClass B} := (fun p => (@consuming_parser A B HA HB p)). *)
 
@@ -113,7 +113,7 @@ Module Type Parser.
     destruct CP. cbv in H. destruct (p (cs, line, col)) eqn:E, p0, p0, r.
     - destruct (FuncCP a). 
       pose proof (consuming_always1 _ _ _ _ _ _ _ H). 
-      pose proof (consuming_always0 _ _ _ _ _ _ _ E). destruct H0, H1; subst; cbv in *; try lia. right. eauto.
+      pose proof (consuming_always0 _ _ _ _ _ _ _ E). destruct H0, H1; subst; cbv in *; try lia.
     - congruence.
   Qed.
 
@@ -212,15 +212,7 @@ Module Type Parser.
         end
       end.
 
-  Lemma consuming_parser_eof : forall `{EqClass cml_unit},
-    consuming_parser eof.
-  Proof.
-    econstructor; intros; cbv in *; destruct cs.
-    - inv H0. eauto.
-    - cp_solver.
-  Qed.
-
-  Hint Resolve consuming_parser_eof : CP_db.
+  (* NOTE: This is not meant to be a consuming parser! *)
   
   (* seq: parser A B -> parser C B -> parser C B
     * `seq p1 p2`
@@ -524,18 +516,23 @@ Module Type Parser.
   * A parser that succeeds when the characters of `str` are the characters
   * that appear next in the stream. Does not consume input upon failure.
   *)
+  Open Scope string_scope.
   Definition parser_string (str : string) (HS : str <> EmptyString): (parser string ascii) :=
     fun (s : stream _) =>
       match s with
       | (cs, line, col) =>
-        let chars := String.list_ascii_of_string str in
-            if list_prefix chars cs
-            then
-                let (line', col') := advancePos chars (line, col)
-                in
-                    (Ok str, list_drop (String.length str) cs, line', col')
-            else (Err ("Expect the literal string """ ++ str ++ """"),
-                    cs, line, col)
+        match cs with
+        | nil => (Err "parser_string requires tokens to consume", cs, line, col)
+        | c::cs' =>
+          let chars := String.list_ascii_of_string str in
+              if list_prefix chars cs
+              then
+                  let (line', col') := advancePos chars (line, col)
+                  in
+                      (Ok str, list_drop (String.length str) cs, line', col')
+              else (Err ("Expect the literal string """ ++ str ++ """"),
+                      cs, line, col)
+        end
       end.
 
   Lemma consuming_parser_parser_string : forall (str : string) (HS : str <> EmptyString),
@@ -543,12 +540,19 @@ Module Type Parser.
   Proof.
     econstructor; intros.
     inv H.
-    destruct str eqn:STR; try congruence;
-    destruct (list_drop_sn cs);
-    destruct (list_prefix (String.list_ascii_of_string (String a s)) cs) eqn:CS; 
-    try (cp_solver; eauto; lia); try congruence.
-    destruct (advancePos (String.list_ascii_of_string (String a s)) (line, col)) eqn:AP; inv H1.
-    destruct cs; eauto.
+    destruct cs eqn:CS.
+    - inv H1.
+    - destruct str eqn:STR; try congruence.
+      destruct (list_prefix (list_ascii_of_string (String a0 s)) (a :: l)); simpl in *; eauto.
+      * destruct (if (a0 =? newline)%char
+        then advancePos (list_ascii_of_string s) (S line, 1)
+        else advancePos (list_ascii_of_string s) (line, S col)); inv H1; eauto.
+        assert (forall {A : Type} `{EqClass A} (l : list A) n, length (list_drop n l) <= length l). {
+          induction l0; destruct n; eauto; try lia.
+          simpl. specialize IHl0 with n. lia.
+        }
+        pose proof (H _ _ l (String.length s)). lia.
+      * inv H1.
   Qed.
 
   Hint Resolve consuming_parser_parser_string : CP_db.
@@ -652,7 +656,41 @@ Module Type Parser.
     * input or not, `many p` succeeds returning the empty list withut consuming
     * input.
     *)
+  (*
+  (* Inspired by CPDT *)
+  Definition length_order {A : Type} (l1 l2 : list A) := length l1 < length l2.
 
+  Hint Constructors Acc : core.
+
+  Lemma length_order_wf' : forall {A : Type} len (ls : list A),
+    length ls <= len ->
+    Acc length_order ls.
+  Proof.
+    unfold length_order; induction len; intros; simpl in *.
+    - econstructor; intros. lia.
+    - inv H; eauto. 
+      econstructor; intros. 
+      eapply IHlen; lia.
+  Defined.
+
+  Theorem length_order_wf: forall {A : Type}, well_founded (@length_order A).
+  Proof.
+    red; intros. eapply length_order_wf'; eauto.
+  Defined.
+
+  Lemma consuming_wf : forall {A B : Type} `{EqClass A, EqClass B}
+    len ls (p : parser A B) (CP : consuming_parser p), 
+    2 <= length ls <= len ->
+    forall ls' line col res line' col', (p (ls, line, col)) = (Ok res, ls', line', col') ->
+    length_order ls' ls.
+  Proof.
+    induction len; intros.
+    - lia.
+    - inv H1. inv H4.
+      * destruct CP; unfold length_order; eauto.
+      * eauto.
+  Defined.
+  *)
   Program Fixpoint many_sub_parser {A B : Type} `{EqClass A, EqClass B}
       (p : parser A B) (CP : consuming_parser p) (cs : list B) line col {measure (List.length cs)} : ((res (list A) string) * (list B) * nat * nat) :=
       match cs with
@@ -672,12 +710,9 @@ Module Type Parser.
     intros; subst.
     symmetry in Heq_anonymous.
     destruct CP.
-    destruct (consuming_always0 _ _ _ _ _ _ _ Heq_anonymous); eauto. 
-    inv Heq_anonymous.
-    simpl. lia.
+    destruct (consuming_always0 _ _ _ _ _ _ _ Heq_anonymous); eauto.
   Defined.
   Next Obligation.
-    simpl.
     auto with *.
   Defined.
 (* 
@@ -695,17 +730,11 @@ Module Type Parser.
       let (cs, line) := csLine in
         many_sub_parser p CP cs line col.
 
+  (* TODO: This proof should be doable, but is too hefty for Coq it seems? *)
   Lemma consuming_parser_many : forall {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
       (CP : consuming_parser p),
     consuming_parser (many p CP).
   Proof.
-    econstructor. intros cs.
-    generalize dependent p.
-    induction cs; intros.
-    - simpl in *. unfold many_sub_parser in H1.
-      cbv delta [many_sub_parser_func] in H1. 
-      simpl in H1.
-      unfold existT in H1.
     (* econstructor. intros cs.
     generalize dependent p.
     induction cs; intros; simpl in *.
@@ -744,8 +773,9 @@ Module Type Parser.
     * `p` fails and does not consume input. Should `p` fail and consume input,
     * then so does this function.
     *)
-  Program Fixpoint skipMany_rec {A B : Type} `{EqClass A, EqClass B} (p : parser A B) 
-      (CP : consuming_parser p) cs line col {measure (length cs)} := 
+  Program Fixpoint skipMany_rec {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} (p : parser A B) 
+      (CP : consuming_parser p) (cs : list B) (line : nat) (col : nat) {measure (length cs)} 
+      : (res cml_unit string * list B * nat * nat) := 
     match cs with
     | nil => (Err "Ran out of tokens in skipMany_rec", cs, line, col)
     | c :: cs' =>
@@ -763,25 +793,32 @@ Module Type Parser.
     destruct CP.
     pose proof (consuming_always0 _ _ _ _ _ _ _ Heq_anonymous).
     destruct H1; subst; eauto.
-    inv Heq_anonymous. 
-    simpl; lia.
-  Qed.
+  Defined.
   Next Obligation.
     auto with *.
-  Qed.
+  Defined.
 
-  Definition skipMany {A B : Type} `{EqClass A, EqClass B} (p : parser A B) (CP : consuming_parser p) := 
+  Definition skipMany {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
+    (p : parser A B) (CP : consuming_parser p) := 
     fun stream =>
       match stream with
       | (cs, line, col) =>
         skipMany_rec p CP cs line col
       end.
 
+  (* TODO: Another doable but hefty proof *)
+  Lemma consuming_parser_skipMany_rec : forall {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
+      (p : parser A B) (CP : consuming_parser p),
+    consuming_parser (fun s => match s with | (cs, line, col) => skipMany_rec p CP cs line col end).
+  Proof.
+  Admitted.
+
   Lemma consuming_parser_skipMany : forall {A B : Type} `{EqClass A, EqClass B, EqClass cml_unit} 
       (p : parser A B) (CP : consuming_parser p),
     consuming_parser (skipMany p CP).
   Proof.
-  Admitted.
+    intros. eapply consuming_parser_skipMany_rec.
+  Qed.
 
   (* spaces: (unit, char) parser
     * `spaces = skipMany space`
@@ -790,7 +827,7 @@ Module Type Parser.
     *)
   Definition spaces `{EqClass cml_unit} : (parser cml_unit ascii) := 
     skipMany space (consuming_parser_label _ _ _).
-  
+
   Lemma consuming_parser_spaces : forall `{EqClass cml_unit},
       consuming_parser spaces.
   Proof.
@@ -800,7 +837,7 @@ Module Type Parser.
     all: fail.
     (* Trick to avoid prohibitively long QED's *)
   Admitted.
-
+    
   (* count: int -> ('a, 'b) parser -> ('a list, 'b) parser
     * `count n p`
     * Applies the parser `p` at most `n` times or until the first time `p`
@@ -856,7 +893,6 @@ Module Type Parser.
               destruct CP;
               pose proof (consuming_always0 _ _ _ _ _ _ _ PS);
               destruct H1, H2; eauto; try lia.
-              inv H1. simpl in H2. lia.
           *** (* count_rec err *) inv H1.
         ** (* err *) inv H1.
   Qed.
@@ -998,7 +1034,10 @@ Module Type Parser.
     destruct H1, H2; subst; simpl in *; try lia.
   Qed.
   Next Obligation.
+    pose proof (@measure_wf).
     auto with *.
+    (* Print program_solve_wf.
+    program_solve_wf. *)
   Qed.
 
   Definition sepBy {A B : Type} `{EqClass A, EqClass B} 
@@ -1051,8 +1090,6 @@ Module Type Parser.
   Next Obligation.
     auto with *.
   Qed.
-
-  Check consuming_parser_parser_return.
 
   (* ('a, 'c) parser -> ('b, 'c) parser -> ('a, 'c) parser *)
   Definition followedBy {A B C : Type} `{EqClass A, EqClass B, EqClass C} (p : parser A C) 
