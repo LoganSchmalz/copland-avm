@@ -1289,50 +1289,54 @@ Definition spc_ev (sp:SP) (e:EvidenceC) : EvidenceC :=
 (*
 TODO: try this again after appraisal lemmas settled 
 *)
+Require Import ErrorStMonad_Coq.
 
-Definition cvm_evidence_denote_asp (a:ASP) (p:Plc) (e:EvidenceC) (x:Event_ID): EvidenceC :=
+
+Definition cvm_evidence_denote_asp (a:ASP) (p:Plc) (e:EvidenceC) (x:Event_ID) (ac : AM_Config): EvidenceC :=
   match a with
   | NULL => mtc
   | CPY => e
   | ASPC sp fwd params =>
-    match fwd with
-    | COMP => hhc p params
-                 (do_asp params (encodeEv (spc_ev sp e)) p x)
-                 (sp_ev sp (et_fun e))
-    | EXTD => ggc p params
-                 (do_asp params (encodeEv (spc_ev sp e)) p x)
-                 (spc_ev sp e)
-    | ENCR => eec p params
-                 (do_asp params (encodeEv (spc_ev sp e)) p x)
-                 (sp_ev sp (et_fun e))
-    | KEEP => (spc_ev sp e)
-    | KILL => mtc (* kkc p params (sp_ev sp (et_fun e)) *)
+    match (do_asp params (encodeEv (spc_ev sp e)) p x ac) with
+    | resultC bs => 
+        match fwd with
+        | COMP => hhc p params bs (sp_ev sp (et_fun e))
+        | EXTD => ggc p params bs (spc_ev sp e)
+        | ENCR => eec p params bs (sp_ev sp (et_fun e))
+        | KEEP => (spc_ev sp e)
+        | KILL => mtc (* kkc p params (sp_ev sp (et_fun e)) *)
+        end
+    | errC e => mtc
     end
-  | SIG => ggc p sig_params
-              (do_asp sig_params (encodeEv e) p x)
-              e
-  | HSH => hhc p hsh_params
-              (do_asp hsh_params (encodeEv e) p x)
-              (et_fun e)
-  | ENC q => eec p (enc_params q)
-                (do_asp (enc_params q) (encodeEv e) p x)
-                (et_fun e)
+  | SIG => 
+      match (do_asp sig_params (encodeEv e) p x ac) with
+      | resultC bs => ggc p sig_params bs e
+      | errC e => mtc
+      end
+  | HSH => 
+      match (do_asp hsh_params (encodeEv e) p x ac) with
+      | resultC bs => hhc p hsh_params bs (et_fun e)
+      | errC e => mtc
+      end
+  | ENC q => 
+      match (do_asp (enc_params q) (encodeEv e) p x ac) with
+      | resultC bs => eec p (enc_params q) bs (et_fun e)
+      | errC e => mtc
+      end
   end.
 
 
 (** * Denotation function of a Typed Concrete Evidence value from an annotated term, initial place, initial evidence *)
-Fixpoint cvm_evidence_denote (t:AnnoTerm) (p:Plc) (ec:EvidenceC) : EvidenceC :=
+Fixpoint cvm_evidence_denote (t:AnnoTerm) (p:Plc) (ec:EvidenceC) (ac : AM_Config) : EvidenceC :=
   match t with
-  | aasp (i,_) x => cvm_evidence_denote_asp x p ec i
-  | aatt _ q x => cvm_evidence_denote x q ec
-  | alseq _ t1 t2 => cvm_evidence_denote t2 p (cvm_evidence_denote t1 p ec)
-  | abseq _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)))
-                         (cvm_evidence_denote t2 p ((splitEvr s ec)))
-  | abpar _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)))
-                         (cvm_evidence_denote t2 p ((splitEvr s ec)))
+  | aasp (i,_) x => cvm_evidence_denote_asp x p ec i ac
+  | aatt _ q x => cvm_evidence_denote x q ec ac
+  | alseq _ t1 t2 => cvm_evidence_denote t2 p (cvm_evidence_denote t1 p ec ac) ac
+  | abseq _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)) ac)
+                         (cvm_evidence_denote t2 p ((splitEvr s ec)) ac)
+  | abpar _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)) ac)
+                         (cvm_evidence_denote t2 p ((splitEvr s ec)) ac)
   end.
-
-Require Import ErrorStMonad_Coq.
 
 
 (** * Assert an arbitrary (remote) CVM execution.  
@@ -1407,49 +1411,33 @@ Proof.
   induction t; intros;
     wrap_ccp_anno.
 
-  
- (*   (* This is more automated, but slower *)
-    try (
-        destruct a;
-        try destruct a;
-        ff; tauto);
-    try (
-        repeat find_apply_hyp_hyp;
-        lia).
-Defined.
-  *)
-   
   -
     destruct a;
       try destruct a;
-      ff; try tauto.
-    +
+      ff; try tauto;
       wrap_ccp_anno; ff.
-    +
-      wrap_ccp_anno; ff.
-    +
-      destruct s.
-      ++
-        wrap_ccp_anno; ff.
-      ++
-        wrap_ccp_anno; ff.
-    +
-      wrap_ccp_anno; ff.
-    +
-      wrap_ccp_anno; ff.
-    +
-      wrap_ccp_anno; ff.
-    +
-      wrap_ccp_anno; ff.
-      
-      
-  
+    + unfold do_asp' in *;
+      destruct (do_asp (asp_paramsC a l p0 t) (get_bits e) p i ac); unfold failm, ret in *; 
+      simpl in *; eauto; try congruence.
+    + unfold do_asp' in *;
+      destruct (do_asp (asp_paramsC a l p0 t) [] p i ac); unfold failm, ret in *; 
+      simpl in *; eauto; try congruence.
+    + unfold do_asp' in *;
+      destruct (do_asp sig_params (get_bits e) p i ac); unfold failm, ret in *; 
+      simpl in *; eauto; try congruence.
+    + unfold do_asp' in *;
+      destruct (do_asp hsh_params (get_bits e) p i ac); unfold failm, ret in *; 
+      simpl in *; eauto; try congruence.
+    + unfold do_asp' in *;
+      destruct (do_asp (enc_params p0) (get_bits e) p i ac); unfold failm, ret in *; 
+      simpl in *; eauto; try congruence.
   -
     lia.
   -
     wrap_ccp_anno.
     assert (st_evid0 = i + event_id_span' t1).
-    eapply IHt1.
+    inv H. simpl in *.
+    eapply IHt1; eauto.
     2: { eassumption. }
     econstructor; eauto.
 
