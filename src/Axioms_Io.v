@@ -70,13 +70,26 @@ Axiom thread_bookend_peel: forall (t:AnnoTerm) p (*et*) etr l (a:Core_Term) tr,
      (shuffled_events tr (cvm_events_core a p etr))
     ).
 
-(*
-Axiom wf_ec_preserved_remote: forall a n e,
-    wf_ec e ->
-    wf_ec (doRemote_session a n e).
-    *)
+Axiom events_cvm_to_core_mt : forall t p e,
+    cvm_events_core (lseqc (aspc CLEAR) t) p e = cvm_events_core t p mt.
 
-Axiom wf_ec_preserved_remote: forall t p u ev1 ev1' evc1 r0,
-    doRemote_uuid t u (get_bits ev1) = resultC ev1' -> 
-    wf_ec evc1 -> 
-    wf_ec (evc r0 (eval t p (get_et evc1))).
+
+(** * Axiom:  assume parallel CVM threads preserve well-formedness of EvC bundles *)
+Axiom wf_ec_preserved_par: forall e l t2 p,
+    wf_ec e ->
+    wf_ec (parallel_vm_thread l t2 p e).
+
+Axiom ev_cvm_mtc: forall ct p e loc,
+    parallel_vm_thread loc ct p mt_evc = parallel_vm_thread loc (lseqc (aspc CLEAR) ct) p e.
+
+
+Axiom cvm_evidence_correct_type : forall t p e e',
+    cvm_evidence t p e = e' -> 
+    get_et e' = eval t p (get_et e).
+
+(** * Axiom about "simulated" parallel semantics of CVM execution:
+      Executing a "CLEAR" before a term is the same as executing that term with mt initial evidence.
+      TODO:  can we use existing axioms to prove this? *)
+Axiom par_evidence_clear: forall l p bits et t2,
+    parallel_vm_thread l (lseqc (aspc CLEAR) t2) p (evc bits et) =
+    parallel_vm_thread l t2 p mt_evc.

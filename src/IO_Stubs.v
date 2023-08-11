@@ -14,6 +14,7 @@
 
 Require Import Term_Defs ConcreteEvidence ErrorStMonad_Coq IO_Type Manifest Manifest_Admits Cvm_St.
 
+Require Import CvmJson_Admits.
 
 Require Import List.
 Import ListNotations.
@@ -35,19 +36,8 @@ Definition doRemote_session (t:Term) (pTo:Plc) (e:EvC) : EvC.
 Admitted.
 *)
 
-Definition doRemote_uuid (t:Term) (uuid:UUID) (ev:RawEv) : ResultT RawEv CallBackErrors.
+Definition doRemote_uuid_payload (uuid:UUID) (payload:StringT) : ResultT StringT CallBackErrors.
 Admitted.
-
-Definition do_remote (t:Term) (pTo:Plc) (e:EvC) (ac: AM_Config) : ResultT RawEv DispatcherErrors := 
-  let remote_uuid_res : ResultT UUID DispatcherErrors := ac.(plcCb) pTo in
-    match remote_uuid_res with 
-    | resultC uuid => 
-        match doRemote_uuid t uuid (get_bits e) with
-        | resultC v => resultC v
-        | errC (messageLift msg) => errC Runtime
-        end
-    | errC e => errC e
-    end.
 
 (** * Stub to simulate evidence collected by a parallel CVM instance *)
 Definition parallel_vm_thread (l:Loc) (t:Core_Term) (p:Plc) (e:EvC) : EvC.

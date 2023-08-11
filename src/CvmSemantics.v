@@ -11,7 +11,7 @@ Require Import Axioms_Io Cvm_Impl Cvm_Run External_Facts Helpers_CvmSemantics Ev
 Require Import List.
 Import ListNotations.
 Require Import Coq.Program.Tactics Coq.Program.Equality.
-Require Import Coq.Arith.Peano_dec Lia.
+Require Import Coq.Arith.Peano_dec Lia PeanoNat.
 
 
 (*
@@ -193,12 +193,6 @@ Defined.
 *)
 
 
-
-(** * Axiom:  assume parallel CVM threads preserve well-formedness of EvC bundles *)
-Axiom wf_ec_preserved_par: forall e l t2 p,
-    wf_ec e ->
-    wf_ec (parallel_vm_thread l t2 p e).
-
 (** * Lemma:  CVM execution preserves well-formedness of EvC bundles 
       (Evidence Type of sufficient length for raw evidence). *)
 Lemma wf_ec_preserved_by_cvm : forall e e' t1 tr tr' p p' i i' ac ac',
@@ -253,7 +247,9 @@ Proof.
     repeat ff.
     unfold do_remote in *; repeat ff.
 
-    eapply wf_ec_preserved_remote; eauto.
+    econstructor.
+    rewrite Nat.eqb_eq in Heqb.
+    intuition.
 
   -
     wrap_ccp.
@@ -634,9 +630,6 @@ Proof.
   invc H.
   eapply span_cvm; eauto.
 Qed.
-
-Axiom events_cvm_to_core_mt : forall t p e,
-    cvm_events_core (lseqc (aspc CLEAR) t) p e = cvm_events_core t p mt.
 
 
 (** * Theorem:  Main Theorem stating that for an arbitrary Copland phrase, all of its execution traces 

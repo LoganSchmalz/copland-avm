@@ -1,4 +1,4 @@
-Require Import Term_Defs AM_Monad Impl_appraisal.
+Require Import Term_Defs (* AM_Monad Impl_appraisal *) .
 
 Definition JsonT : Set. Admitted.
 
@@ -26,7 +26,7 @@ Admitted.
 Definition jsonToRequest (j:JsonT) : CvmRequestMessage.
 Admitted.
 
-Definition jsonToResponse (j:JsonT) : CvmRequestMessage.
+Definition jsonToResponse (j:JsonT) : CvmResponseMessage.
 Admitted.
 
 Definition jsonToAmRequest (j:JsonT): AM_RequestMessage.

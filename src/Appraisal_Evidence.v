@@ -1,12 +1,9 @@
 Require Import ConcreteEvidence AutoApp Auto Helpers_CvmSemantics Term_Defs Anno_Term_Defs Cvm_St Cvm_Impl Defs StructTactics OptMonad_Coq IO_Stubs Evidence_Bundlers Axioms_Io External_Facts.
 
-(* Require Imort Cvm_Monad. *)
-
-(* Require Import ErrorStMonad_Coq. *)
 Require Import List.
 Import ListNotations.
 
-Require Import Lia Coq.Program.Tactics.
+Require Import Lia Coq.Program.Tactics PeanoNat.
 
 
 Definition peel_bs (ls:RawEv) : Opt (BS * RawEv) :=
@@ -1749,14 +1746,6 @@ Ltac clear_skipn_firstn :=
   end.
 
 
-
-
-
-(** * Axiom:  assume parallel CVM threads preserve well-formedness of EvC bundles *)
-Axiom wf_ec_preserved_par: forall e l t2 p,
-    wf_ec e ->
-    wf_ec (parallel_vm_thread l t2 p e).
-
 (** * Lemma:  CVM execution preserves well-formedness of EvC bundles 
       (Evidence Type of sufficient length for raw evidence). *)
 Lemma wf_ec_preserved_by_cvm : forall e e' t1 tr tr' p p' i i' ac ac' res,
@@ -1794,8 +1783,10 @@ Proof.
     wrap_ccp.
     repeat ff.
     unfold do_remote in *.
-    ff.
-    eapply wf_ec_preserved_remote; eauto.
+    repeat ff.
+    econstructor.
+    rewrite Nat.eqb_eq in Heqb.
+    intuition.
 
   - (* lseq case *)
     wrap_ccp.
@@ -1859,10 +1850,6 @@ Ltac do_wfec_preserved :=
                           ltac:(eapply wf_ec_preserved_by_cvm; [(*apply H |*) apply H2 | apply H3])
                                  
     end.
-
-
-Axiom ev_cvm_mtc: forall ct p e loc,
-    parallel_vm_thread loc ct p mt_evc = parallel_vm_thread loc (lseqc (aspc CLEAR) ct) p e.
 
 
 (** * Lemma:  Evidence Type denotation respects evidence reference semantics  *)
@@ -2415,13 +2402,6 @@ Proof.
 Defined.
 
 
-
-
-Axiom cvm_evidence_correct_type : forall t p e e',
-  cvm_evidence t p e = e' -> 
-  get_et e' = eval t p (get_et e).
-
-
 (** * Lemma:  parallel CVM threads preserve the reference Evidence Type semantics (eval). *)
 Lemma par_evidence_r: forall l p bits bits' et et' t2,
     parallel_vm_thread l (copland_compile t2) p (evc bits et) = evc bits' et' ->
@@ -2446,13 +2426,6 @@ Proof.
   *) 
 
 Qed.
-         
-(** * Axiom about "simulated" parallel semantics of CVM execution:
-      Executing a "CLEAR" before a term is the same as executing that term with mt initial evidence.
-      TODO:  can we use existing axioms to prove this? *)
-Axiom par_evidence_clear: forall l p bits et t2,
-    parallel_vm_thread l (lseqc (aspc CLEAR) t2) p (evc bits et) =
-    parallel_vm_thread l t2 p mt_evc.
 
 (** * Main Lemma:  CVM execution maintains the Evidence Type reference semantics (eval) for 
       its internal evidence bundle. *)
@@ -2599,6 +2572,10 @@ Qed.
 (*
 TODO: try this lemma again after getting appraisal Lemmas settled 
 *)
+
+Axiom cvm_evidence_core_at : forall t p bits bits' et ac,
+  do_remote t p (evc bits et) ac = resultC bits' -> 
+  cvm_evidence_core (copland_compile t) p (evc bits et) = evc bits' (eval t p et).
 
 
 (** * Lemma:  relating reconstructed CVM EvC bundles via the EvidenceC evidence denotation. *)
@@ -2805,10 +2782,6 @@ Proof.
 
     
     assert (evc bits' (eval t' p et) = cvm_evidence_core (copland_compile t') p (evc bits et)). {
-
-    Axiom cvm_evidence_core_at : forall t p bits bits' et ac,
-    do_remote t p (evc bits et) ac = resultC bits' -> 
-    cvm_evidence_core (copland_compile t) p (evc bits et) = evc bits' (eval t p et).
 
     symmetry.
 

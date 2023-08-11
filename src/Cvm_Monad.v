@@ -7,12 +7,12 @@ Author:  Adam Petz, ampetz@ku.edu
 Require Import Term_Defs Term ConcreteEvidence Axioms_Io Evidence_Bundlers Defs.
 Require Import StructTactics.
 
+Require Export Cvm_St ErrorStMonad_Coq IO_Stubs Manifest_Admits CvmJson_Admits.
+
 Require Import Coq.Program.Tactics Lia.
 
 Require Import List.
 Import ListNotations.
-
-Require Export Cvm_St ErrorStMonad_Coq IO_Stubs.
 
 
 (** * CVM monadic primitive operations *)
@@ -177,6 +177,32 @@ Definition tag_REQ (t:Term) (p:Plc) (q:Plc) (e:EvC) : CVM unit :=
 Definition tag_RPY (p:Plc) (q:Plc) (e:EvC) : CVM unit :=
   rpyi <- inc_id ;;
   add_tracem [rpy rpyi p q (get_et e)].
+
+Definition do_remote (t:Term) (pTo:Plc) (e:EvC) (ac: AM_Config) : ResultT RawEv DispatcherErrors := 
+  let remote_uuid_res : ResultT UUID DispatcherErrors := ac.(plcCb) pTo in
+    match remote_uuid_res with 
+    | resultC uuid => 
+        let authTok : ReqAuthTok := mt_evc in
+        let cvmReq : CvmRequestMessage := REQ t authTok (get_bits e) in 
+        let cvmReqJson : JsonT := requestToJson cvmReq in 
+        let reqStr : StringT := jsonToStr cvmReqJson in 
+        match (doRemote_uuid_payload uuid reqStr) with 
+        | resultC cvmRespStr => 
+            let cvmRespJson : JsonT := strToJson cvmRespStr in 
+            let cvmResp : CvmResponseMessage := jsonToResponse cvmRespJson in 
+            match cvmResp with 
+            | RES resev => 
+                let expected_et := eval t pTo (get_et e) in 
+                let etsize_expected := et_size expected_et in 
+                  match (Nat.eqb etsize_expected (length resev)) with 
+                  | true => resultC resev 
+                  | false => errC Runtime
+                  end
+            end
+        | errC (messageLift msg) => errC Runtime 
+        end
+    | errC e => errC e
+    end.
 
 Definition doRemote_session' (t:Term) (pTo:Plc) (e:EvC) : CVM EvC := 
   ac <- get_amConfig ;;
