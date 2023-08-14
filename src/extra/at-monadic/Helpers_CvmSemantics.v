@@ -6,7 +6,7 @@ Author:  Adam Petz, ampetz@ku.edu
 
 Require Import Anno_Term_Defs Cvm_Monad Cvm_Impl Term_Defs Auto StructTactics AutoApp Manifest.
 
-Require Import Coq.Program.Tactics Coq.Program.Equality Lia.
+Require Import Coq.Program.Tactics Coq.Program.Equality.
 
 Require Import List.
 Import ListNotations.
@@ -33,7 +33,29 @@ Proof.
     destruct (aspCb ac a p (encodeEvRaw (get_bits e)) (get_bits e)) eqn:E1; simpl in *; eauto.
 
   - (* at case *)
-    repeat ff. 
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
 
   - pose proof (IHt1 e tr p i ac).
     destruct (build_cvm t1 {| st_ev := e; st_trace := tr; st_pl := p; st_evid := i; st_AM_config := ac |}) eqn:C1;
@@ -83,6 +105,34 @@ Proof.
       
   - (* at case *)
     repeat ff.
+
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
+
+
+
   -
     simpl in *.
     monad_unfold.
@@ -103,7 +153,11 @@ Proof.
     }
     congruence.
   -
+    (*
+    do_wf_pieces. *)
     annogo.
+    Locate annogo.
+    Locate vmsts.
     df.
     
     repeat break_match;
@@ -248,399 +302,84 @@ Ltac anhl :=
 Ltac monad_simp := 
   repeat (monad_unfold; simpl in *; eauto).
 
-  Ltac do_st_trace :=
-    match goal with
-    | [H': context[{| st_ev := ?e; st_trace := ?tr; st_pl := ?p; st_evid := ?i; st_AM_config := ?ac |}]
-       |- context[?tr]] =>
-      assert_new_proof_by
-        (tr = st_trace {| st_ev := e; st_trace := tr; st_pl := p; st_evid := i; st_AM_config := ac |} )
-        tauto
-    end.
-  
-  Ltac do_st_trace_assumps :=
-    match goal with
-    | [H': context[{| st_ev := ?e; st_trace := ?tr; st_pl := ?p; st_evid := ?i; st_AM_config := ?ac |}]
-       |- _] =>
-      assert_new_proof_by
-        (tr = st_trace {| st_ev := e; st_trace := tr; st_pl := p; st_evid := i; st_AM_config := ac |} )
-        tauto
-    end.
-  
-  Ltac find_rw_in_goal :=
-    match goal with
-    | [H': context[?x = _]
-       |- context[?x]] =>
-      rewrite H'; clear H'
-    end.
-  
-  Inductive build_cvmP :
-    Core_Term -> cvm_st -> (ResultT unit CVM_Error) -> cvm_st ->  Prop :=
-  | ccp: forall t st st' res,
-      build_cvm t st = (res, st') ->
-      build_cvmP t st res st'.
-  
-  Lemma ccp_implies_cc: forall t st st' res,
-    build_cvmP t st res st' ->
-    build_cvm t st = (res,st').
-  Proof.
-    intros.
-    solve_by_inversion.
-  Defined.
-  
-  Lemma cc_implies_ccp: forall t st st' res,
-    build_cvm t st = (res,st') -> 
-    build_cvmP t st res st'.
-  Proof.
-    intros.
-    econstructor.
-    tauto.
-  Defined.
-  
-  Lemma ccp_iff_cc: forall t st st' res,
-    build_cvm t st = (res,st') <-> 
-    build_cvmP t st res st'.
-  Proof.
-    intros.
-    split; intros;
-      try (eapply cc_implies_ccp; eauto);
-      try (eapply ccp_implies_cc; eauto).
-  Defined.
-  
-  Ltac inv_term_coreP :=
-    match goal with
-    | [H: term_to_coreP _ _ (* ?t (?c _) *)
-       |- _ ] =>
-      inversion H; subst
-    end.
-  
-  Lemma term_to_coreP_redo: forall t t',
-      copland_compile t = t' ->
-      term_to_coreP t t'.
-  Proof.
-    intros.
-    econstructor.
-    eauto.
-  Defined.
-  
-  Ltac do_term_to_core_redo :=
-    match goal with
-    | [H: copland_compile ?t = ?t'
-       |- _ ] =>
-      eapply term_to_coreP_redo in H
-    end.
-  
-  
-  
-  Lemma annoP_redo: forall t annt n n',
-      anno t n = (n', annt) ->
-      annoP annt t.
-  Proof.
-    intros.
-    econstructor.
-    eexists.
-    jkjke.
-  Defined.
-  
-  Ltac do_anno_redo :=
-    match goal with
-    | [H: anno ?t ?n = (_,?annt)
-       |- _ ] =>
-      eapply annoP_redo in H
-    end.
-  
-  Ltac inv_annoP :=
-    match goal with
-    | [H: annoP _ _ (*_ (?c _) *)
-       |- _ ] =>
-      inversion H; subst
-    end;
-    destruct_conjs.
-  
-  Lemma annoP_indexed_redo: forall t annt n n',
-      anno t n = (n', annt) ->
-      annoP_indexed annt t n n'.
-  Proof.
-    intros.
-    econstructor.
-    jkjke.
-  Defined.
-  
-  Ltac do_anno_indexed_redo :=
-    match goal with
-    | [H: anno _ _ = (_,_)
-       |- _ ] =>
-      eapply annoP_indexed_redo in H
-    end.
-  
-  Ltac inv_annoP_indexed :=
-    match goal with
-    | [H: annoP_indexed _ _ _ _(*_ (?c _) _*)
-       |- _ ] =>
-      inversion H; subst
-    end;
-    destruct_conjs.
-  
-  Ltac wrap_annopar :=
-    inv_term_coreP;
-    dd;
-    repeat do_term_to_core_redo.
-  
-  Ltac wrap_anno :=
-    inv_annoP;
-    dd;
-    repeat do_anno_redo.
-  
-  Ltac wrap_anno_indexed :=
-    inv_annoP_indexed;
-    dd;
-    repeat do_anno_indexed_redo.
-  
-  Ltac wrap_ccp :=
-    
-    try rewrite <- ccp_iff_cc in *;
-    dd;
-    repeat do_pl_immut;
-    dd;
-    try rewrite ccp_iff_cc in *.
-  
-  Ltac wrap_ccp_anno :=
-    
-    try rewrite <- ccp_iff_cc in *;
-    try wrap_annopar;
-    try wrap_anno;
-    try wrap_anno_indexed;
-    repeat do_pl_immut;
-    try (unfold OptMonad_Coq.ret in * );
-    try (unfold OptMonad_Coq.bind in * );
-    try (unfold ErrorStMonad_Coq.bind in * );
-    try (unfold ErrorStMonad_Coq.ret in * );
-    dd;
-    try rewrite ccp_iff_cc in *.
-
-
-(**  * Event ID spans same for a term and its corresponding core term. *)
-Lemma event_id_spans_same : forall t,
-    event_id_span' t = event_id_span (copland_compile t).
-Proof.
-  intros.
-  induction t; ff.
-  -
-    destruct a; ff; try tauto.
-    +
-      destruct s; ff.
-  -
-    jkjke'.
-  -
-    destruct s0; ff; lia.
-  -
-    destruct s0; ff; lia.
-Qed.
-
-(** * Lemma:  CVM increases event IDs according to event_id_span' denotation. *)
-Lemma cvm_spans_coreTerm: forall (pt:Core_Term) e tr p i e' tr' p' i' ac ac',
-    build_cvmP
-      pt
-      {| st_ev := e;
-         st_trace := tr;
-         st_pl := p;
-         st_evid := i;
-         st_AM_config := ac |}
-      (resultC tt)
-      {|
-        st_ev := e';
-        st_trace := tr';
-        st_pl := p';
-        st_evid := i';
-        st_AM_config := ac'
-      |} ->
-    i' = i + event_id_span pt.
-Proof.
-intros.
-generalizeEverythingElse pt.
-induction pt; intros;
-  wrap_ccp_anno.
-
-(*   (* This is more automated, but slower *)
-  try (
-      destruct a;
-      try destruct a;
-      ff; tauto);
-  try (
-      repeat find_apply_hyp_hyp;
-      lia).
-Defined.
-*)
- 
--
-  destruct a;
-    try destruct a;
-    Auto.ff; try tauto.
-    lia.
--
-  repeat ff.
-  lia.
--
-  wrap_ccp_anno.
-  repeat Auto.ff.
-  assert (st_evid0 = i + event_id_span pt1).
-  eapply IHpt1.
-  eassumption.
-  
-  assert (i' = st_evid0 + event_id_span pt2).
-  eapply IHpt2.
-  eassumption.
-  lia.
--
-  repeat ff.
-  assert (st_evid1 = (i + 1) +  event_id_span pt1).
-  eapply IHpt1; eauto.
-
-  assert (st_evid = st_evid1 + event_id_span pt2).
-  eapply IHpt2; eauto.
-
-  lia.
-
-- (* bpar case *)
-
-  repeat ff.
-
-  assert (st_evid = (i + 1) +  event_id_span pt1).
-  eauto.
-  lia.
-Qed.
-
-Lemma cvm_spans_term: forall t pt e tr p i e' tr' p' i' ac ac',
-    term_to_coreP t pt ->
-    build_cvmP
-      pt
-      {| st_ev := e;
-         st_trace := tr;
-         st_pl := p;
-         st_evid := i;
-         st_AM_config := ac |}
-      (resultC tt)
-      {|
-        st_ev := e';
-        st_trace := tr';
-        st_pl := p';
-        st_evid := i';
-        st_AM_config := ac'
-      |} ->
-    i' = i + event_id_span' t.
-Proof.
-  intros.
-  erewrite event_id_spans_same. 
-  eapply cvm_spans_coreTerm.
-  invc H.
-  eassumption.
-Qed.
-
-Theorem events_id_deterministic_output_on_results : forall t e tr1 tr2 p i1 ac st1 st2,
+Theorem evidence_deterministic_output_on_results : forall t e tr1 tr2 p i1 i2 ac st1 st2,
   build_cvm t {| st_ev := e; st_trace := tr1; st_pl := p; st_evid := i1; st_AM_config := ac |} = (resultC tt, st1) ->
-  build_cvm t {| st_ev := e; st_trace := tr2; st_pl := p; st_evid := i1; st_AM_config := ac |} = (resultC tt, st2) ->
-  st1.(st_evid) = st2.(st_evid).
-Proof.
-  intros.
-  destruct st1.
-  destruct st2.
-  assert (st_evid = i1 + event_id_span t).
-  {
-    eapply cvm_spans_coreTerm.
-    econstructor; eauto.
-  }
-
-  assert (st_evid0 = i1 + event_id_span t).
-  {
-    eapply cvm_spans_coreTerm.
-    econstructor; eauto.
-  }
-  simpl.
-  congruence.
-Qed.
-
-Theorem evidence_deterministic_output_on_results : forall t e tr1 tr2 p i1 ac st1 st2,
-  build_cvm t {| st_ev := e; st_trace := tr1; st_pl := p; st_evid := i1; st_AM_config := ac |} = (resultC tt, st1) ->
-  build_cvm t {| st_ev := e; st_trace := tr2; st_pl := p; st_evid := i1; st_AM_config := ac |} = (resultC tt, st2) ->
+  build_cvm t {| st_ev := e; st_trace := tr2; st_pl := p; st_evid := i2; st_AM_config := ac |} = (resultC tt, st2) ->
   st1.(st_ev) = st2.(st_ev).
 Proof.
   induction t; intros; monad_simp.
   - destruct a; monad_simp; invc H; invc H0; eauto;
     destruct (aspCb ac a p (encodeEvRaw (get_bits e)) (get_bits e)); 
     simpl in *; invc H1; invc H2; eauto.
-  - repeat ff.
+  - 
+  repeat ff.
+  unfold do_remote in *.
+  unfold liftDispatchErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  repeat ff.
+  unfold liftCallbackErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  monad_unfold.
+  repeat ff.
+
+  congruence.
+
+
+
   - destruct (build_cvm t1 {| st_ev := e; st_trace := tr1; st_pl := p; st_evid := i1; st_AM_config := ac |}) eqn:E1;
-    destruct (build_cvm t1 {| st_ev := e; st_trace := tr2; st_pl := p; st_evid := i1; st_AM_config := ac |}) eqn:E2;
+    destruct (build_cvm t1 {| st_ev := e; st_trace := tr2; st_pl := p; st_evid := i2; st_AM_config := ac |}) eqn:E2;
     destruct r, r0; invc H; invc H0; destruct u, u0, c, c0.
-    pose proof (IHt1 _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
+    pose proof (IHt1 _ _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
     assert (st_pl = st_pl0). {
-      pose proof (pl_immut t1 e tr2 p i1 ac); monad_unfold;
+      pose proof (pl_immut t1 e tr2 p i2 ac); monad_unfold;
       pose proof (pl_immut t1 e tr1 p i1 ac); monad_unfold.
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
     assert (st_AM_config = st_AM_config0). {
-      pose proof (ac_immut t1 e tr2 p i1 ac); monad_unfold;
+      pose proof (ac_immut t1 e tr2 p i2 ac); monad_unfold;
       pose proof (ac_immut t1 e tr1 p i1 ac); monad_unfold.
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
-    assert (st_evid = st_evid0).
-    {
-      pose proof (events_id_deterministic_output_on_results _ _ _ _ _ _ _ _ _ E1 E2).
-      simpl in *.
-      congruence.
-    }
-
     subst; clear E1 E2.
-
-    destruct (build_cvm t2 {| st_ev := st_ev0; st_trace := st_trace; st_pl := st_pl0; st_evid := st_evid0; st_AM_config := st_AM_config0 |}) eqn:E1;
+    destruct (build_cvm t2 {| st_ev := st_ev0; st_trace := st_trace; st_pl := st_pl0; st_evid := st_evid; st_AM_config := st_AM_config0 |}) eqn:E1;
     destruct (build_cvm t2 {| st_ev := st_ev0; st_trace := st_trace0; st_pl := st_pl0; st_evid := st_evid0; st_AM_config := st_AM_config0 |}) eqn:E2;
     invc H1; invc H2; simpl in *; eauto.
   - destruct (build_cvm t1 {| st_ev := e; st_trace := tr1 ++ [Term_Defs.split i1 p]; st_pl := p; st_evid := i1 + 1; st_AM_config := ac |}) eqn:E1;
-    destruct (build_cvm t1 {| st_ev := e; st_trace := tr2 ++ [Term_Defs.split i1 p]; st_pl := p; st_evid := i1 + 1; st_AM_config := ac |}) eqn:E2;
+    destruct (build_cvm t1 {| st_ev := e; st_trace := tr2 ++ [Term_Defs.split i2 p]; st_pl := p; st_evid := i2 + 1; st_AM_config := ac |}) eqn:E2;
     destruct r, r0; invc H; invc H0; destruct u, u0, c, c0.
-    pose proof (IHt1 _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
+    pose proof (IHt1 _ _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
     assert (st_pl = st_pl0). {
-      pose proof (pl_immut t1 e (tr2 ++ [Term_Defs.split i1 p]) p (i1 + 1) ac); monad_unfold;
+      pose proof (pl_immut t1 e (tr2 ++ [Term_Defs.split i2 p]) p (i2 + 1) ac); monad_unfold;
       pose proof (pl_immut t1 e (tr1 ++ [Term_Defs.split i1 p]) p (i1 + 1) ac); monad_unfold;
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
     assert (st_AM_config = st_AM_config0). {
-      pose proof (ac_immut t1 e (tr2 ++ [Term_Defs.split i1 p]) p (i1 + 1) ac); monad_unfold;
+      pose proof (ac_immut t1 e (tr2 ++ [Term_Defs.split i2 p]) p (i2 + 1) ac); monad_unfold;
       pose proof (ac_immut t1 e (tr1 ++ [Term_Defs.split i1 p]) p (i1 + 1) ac); monad_unfold;
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
-    assert (st_evid = st_evid0).
-    {
-      pose proof (events_id_deterministic_output_on_results _ _ _ _ _ _ _ _ _ E1 E2).
-      simpl in *.
-      congruence.
-    }
     subst; clear E1 E2.
-    destruct (build_cvm t2 {| st_ev := e; st_trace := st_trace; st_pl := st_pl0; st_evid := st_evid0; st_AM_config := st_AM_config0 |}) eqn:E1;
+    destruct (build_cvm t2 {| st_ev := e; st_trace := st_trace; st_pl := st_pl0; st_evid := st_evid; st_AM_config := st_AM_config0 |}) eqn:E1;
     destruct (build_cvm t2 {| st_ev := e; st_trace := st_trace0; st_pl := st_pl0; st_evid := st_evid0; st_AM_config := st_AM_config0 |}) eqn:E2;
     destruct r0, r;
     invc H1; invc H2; simpl in *;
     destruct u, u0.
-    pose proof (IHt2 _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst; 
+    pose proof (IHt2 _ _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst; 
     rewrite H; eauto.
   - destruct (build_cvm t1 {| st_ev := e; st_trace := (tr1 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]; st_pl := p; st_evid := i1 + 1; st_AM_config := ac |}) eqn:E1;
-    destruct (build_cvm t1 {| st_ev := e; st_trace := (tr2 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]; st_pl := p; st_evid := i1 + 1; st_AM_config := ac |}) eqn:E2;
+    destruct (build_cvm t1 {| st_ev := e; st_trace := (tr2 ++ [Term_Defs.split i2 p]) ++ [cvm_thread_start l p t2 (get_et e)]; st_pl := p; st_evid := i2 + 1; st_AM_config := ac |}) eqn:E2;
     destruct r, r0; invc H; invc H0; destruct u, u0, c, c0.
-    assert (st_evid = st_evid0).
-    {
-        pose proof (events_id_deterministic_output_on_results _ _ _ _ _ _ _ _ _ E1 E2).
-        simpl in *.
-        congruence.
-    }
-    subst.
-    pose proof (IHt1 _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
+    pose proof (IHt1 _ _ _ _ _ _ _ _ _ E1 E2); simpl in *; subst.
     assert (st_pl = st_pl0). {
       pose proof (pl_immut t1 e ((tr1 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i1 + 1) ac); monad_unfold;
-      pose proof (pl_immut t1 e ((tr2 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i1 + 1) ac); monad_unfold.
+      pose proof (pl_immut t1 e ((tr2 ++ [Term_Defs.split i2 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i2 + 1) ac); monad_unfold.
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
     assert (st_AM_config = st_AM_config0). {
       pose proof (ac_immut t1 e ((tr1 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i1 + 1) ac); monad_unfold;
-      pose proof (ac_immut t1 e ((tr2 ++ [Term_Defs.split i1 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i1 + 1) ac); monad_unfold.
+      pose proof (ac_immut t1 e ((tr2 ++ [Term_Defs.split i2 p]) ++ [cvm_thread_start l p t2 (get_et e)]) p (i2 + 1) ac); monad_unfold.
       rewrite E1, E2 in *; simpl in *; subst; eauto.
     }
     subst; clear E1 E2; eauto.
@@ -679,6 +418,115 @@ Proof.
     monad_simp; invc H1; invc H2; eauto; simpl in *;
     try (rewrite H3; eauto).
   - repeat ff.
+
+  repeat ff.
+  unfold do_remote in *.
+  unfold liftDispatchErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  repeat ff.
+  unfold liftCallbackErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  monad_unfold.
+  repeat ff.
+
+  find_rewrite;
+  ff.
+  
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+  congruence.
+
+  find_rewrite.
+  ff.
+
+  congruence.
+
+
+  repeat ff.
+  unfold do_remote in *.
+  unfold liftDispatchErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  repeat ff.
+  unfold liftCallbackErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  monad_unfold.
+  repeat ff.
+
+
+  find_rewrite.
+  ff.
+
+  congruence.
+
+  congruence.
+
+  repeat ff.
+  unfold do_remote in *.
+  unfold liftDispatchErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  repeat ff.
+  unfold liftCallbackErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  monad_unfold.
+  repeat ff.
+
+
+  find_rewrite.
+  ff.
+
+  congruence.
+
+  congruence.
+
+  repeat ff.
+  unfold do_remote in *.
+  unfold liftDispatchErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  repeat ff.
+  unfold liftCallbackErrM in *.
+  unfold liftErrM in *.
+  repeat break_match.
+  monad_unfold.
+  repeat ff.
+
+
+  find_rewrite.
+  ff.
+
+  find_rewrite.
+  ff.
+
+
+
+
+  (*
+  - invc H; invc H0; simpl in *; 
+    intuition; eauto;
+    try (rewrite H; eauto);
+    invc H; eauto. *)
   - ff; eauto;
     repeat match goal with
     | x : cvm_st |- _ => destruct x
@@ -883,6 +731,176 @@ Proof.
   apply Heqp.
   intuition. 
 Defined.
+
+Ltac do_st_trace :=
+  match goal with
+  | [H': context[{| st_ev := ?e; st_trace := ?tr; st_pl := ?p; st_evid := ?i; st_AM_config := ?ac |}]
+     |- context[?tr]] =>
+    assert_new_proof_by
+      (tr = st_trace {| st_ev := e; st_trace := tr; st_pl := p; st_evid := i; st_AM_config := ac |} )
+      tauto
+  end.
+
+Ltac do_st_trace_assumps :=
+  match goal with
+  | [H': context[{| st_ev := ?e; st_trace := ?tr; st_pl := ?p; st_evid := ?i; st_AM_config := ?ac |}]
+     |- _] =>
+    assert_new_proof_by
+      (tr = st_trace {| st_ev := e; st_trace := tr; st_pl := p; st_evid := i; st_AM_config := ac |} )
+      tauto
+  end.
+
+Ltac find_rw_in_goal :=
+  match goal with
+  | [H': context[?x = _]
+     |- context[?x]] =>
+    rewrite H'; clear H'
+  end.
+
+Inductive build_cvmP :
+  Core_Term -> cvm_st -> (ResultT unit CVM_Error) -> cvm_st ->  Prop :=
+| ccp: forall t st st' res,
+    build_cvm t st = (res, st') ->
+    build_cvmP t st res st'.
+
+Lemma ccp_implies_cc: forall t st st' res,
+  build_cvmP t st res st' ->
+  build_cvm t st = (res,st').
+Proof.
+  intros.
+  solve_by_inversion.
+Defined.
+
+Lemma cc_implies_ccp: forall t st st' res,
+  build_cvm t st = (res,st') -> 
+  build_cvmP t st res st'.
+Proof.
+  intros.
+  econstructor.
+  tauto.
+Defined.
+
+Lemma ccp_iff_cc: forall t st st' res,
+  build_cvm t st = (res,st') <-> 
+  build_cvmP t st res st'.
+Proof.
+  intros.
+  split; intros;
+    try (eapply cc_implies_ccp; eauto);
+    try (eapply ccp_implies_cc; eauto).
+Defined.
+
+Ltac inv_term_coreP :=
+  match goal with
+  | [H: term_to_coreP _ _ (* ?t (?c _) *)
+     |- _ ] =>
+    inversion H; subst
+  end.
+
+Lemma term_to_coreP_redo: forall t t',
+    copland_compile t = t' ->
+    term_to_coreP t t'.
+Proof.
+  intros.
+  econstructor.
+  eauto.
+Defined.
+
+Ltac do_term_to_core_redo :=
+  match goal with
+  | [H: copland_compile ?t = ?t'
+     |- _ ] =>
+    eapply term_to_coreP_redo in H
+  end.
+
+
+
+Lemma annoP_redo: forall t annt n n',
+    anno t n = (n', annt) ->
+    annoP annt t.
+Proof.
+  intros.
+  econstructor.
+  eexists.
+  jkjke.
+Defined.
+
+Ltac do_anno_redo :=
+  match goal with
+  | [H: anno ?t ?n = (_,?annt)
+     |- _ ] =>
+    eapply annoP_redo in H
+  end.
+
+Ltac inv_annoP :=
+  match goal with
+  | [H: annoP _ _ (*_ (?c _) *)
+     |- _ ] =>
+    inversion H; subst
+  end;
+  destruct_conjs.
+
+Lemma annoP_indexed_redo: forall t annt n n',
+    anno t n = (n', annt) ->
+    annoP_indexed annt t n n'.
+Proof.
+  intros.
+  econstructor.
+  jkjke.
+Defined.
+
+Ltac do_anno_indexed_redo :=
+  match goal with
+  | [H: anno _ _ = (_,_)
+     |- _ ] =>
+    eapply annoP_indexed_redo in H
+  end.
+
+Ltac inv_annoP_indexed :=
+  match goal with
+  | [H: annoP_indexed _ _ _ _(*_ (?c _) _*)
+     |- _ ] =>
+    inversion H; subst
+  end;
+  destruct_conjs.
+
+Ltac wrap_annopar :=
+  inv_term_coreP;
+  dd;
+  repeat do_term_to_core_redo.
+
+Ltac wrap_anno :=
+  inv_annoP;
+  dd;
+  repeat do_anno_redo.
+
+Ltac wrap_anno_indexed :=
+  inv_annoP_indexed;
+  dd;
+  repeat do_anno_indexed_redo.
+
+Ltac wrap_ccp :=
+  
+  try rewrite <- ccp_iff_cc in *;
+  dd;
+  repeat do_pl_immut;
+  dd;
+  try rewrite ccp_iff_cc in *.
+
+Ltac wrap_ccp_anno :=
+  
+  try rewrite <- ccp_iff_cc in *;
+  try wrap_annopar;
+  try wrap_anno;
+  try wrap_anno_indexed;
+  repeat do_pl_immut;
+  try (unfold OptMonad_Coq.ret in * );
+  try (unfold OptMonad_Coq.bind in * );
+  try (unfold ErrorStMonad_Coq.bind in * );
+  try (unfold ErrorStMonad_Coq.ret in * );
+  dd;
+  try rewrite ccp_iff_cc in *.
+
 
 
 Ltac cumul_ih :=

@@ -245,7 +245,21 @@ Proof.
   -
     wrap_ccp.
     repeat ff.
-    unfold do_remote in *; repeat ff.
+
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
+(*
+    unfold do_remote in *; repeat ff. *)
 
     econstructor.
     rewrite Nat.eqb_eq in Heqb.
@@ -351,9 +365,234 @@ Ltac do_rcih :=
             try (econstructor; first [eapply firstn_long | eapply skipn_long]; try eauto; try lia))      
   end.
 
+
+(**  * Event ID spans same for a term and its corresponding core term. *)
+Lemma event_id_spans_same : forall t,
+    event_id_span' t = event_id_span (copland_compile t).
+Proof.
+  intros.
+  induction t; ff.
+  -
+    destruct a; ff; try tauto.
+    +
+      destruct s; ff.
+  -
+    jkjke'.
+  -
+    destruct s0; ff; lia.
+  -
+    destruct s0; ff; lia.
+Qed.
+
+(** * Lemma:  CVM increases event IDs according to event_id_span' denotation. *)
+Lemma cvm_spans: forall t pt e tr p i e' tr' p' i' ac ac',
+    term_to_coreP t pt ->
+    build_cvmP
+      pt
+      {| st_ev := e;
+         st_trace := tr;
+         st_pl := p;
+         st_evid := i;
+         st_AM_config := ac |}
+      (resultC tt)
+      {|
+        st_ev := e';
+        st_trace := tr';
+        st_pl := p';
+        st_evid := i';
+        st_AM_config := ac'
+      |} ->
+    i' = i + event_id_span' t.
+Proof.
+  intros.
+  generalizeEverythingElse t.
+  induction t; intros;
+    wrap_ccp_anno.
+
+  
+ (*   (* This is more automated, but slower *)
+    try (
+        destruct a;
+        try destruct a;
+        ff; tauto);
+    try (
+        repeat find_apply_hyp_hyp;
+        lia).
+Defined.
+  *)
+   
+  -
+    destruct a;
+      try destruct a;
+      Auto.ff; try tauto.
+    +
+      wrap_ccp_anno; ff.
+    +
+      wrap_ccp_anno; ff.
+    +
+      destruct s.
+      ++
+        wrap_ccp_anno; repeat Auto.ff.
+      ++
+        wrap_ccp_anno; repeat Auto.ff.
+    +
+      wrap_ccp_anno; repeat Auto.ff.
+    +
+      wrap_ccp_anno; repeat Auto.ff.
+    +
+      wrap_ccp_anno; repeat Auto.ff.
+      
+  
+  -
+    repeat ff.
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
+    lia.
+  -
+    wrap_ccp_anno.
+    repeat Auto.ff.
+    assert (st_evid0 = i + event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (i' = st_evid0 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    lia.
+  -
+    destruct s0; destruct s1.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+  - (* bpar case *)
+    destruct s0; destruct s1.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      repeat Auto.ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    
+    lia.
+Qed.
   
 (** * CVM event ID span same as annotated term range *)
-Lemma cvm_spans_annoTerm: forall atp t annt i j e e' tr tr' p p' i' ac ac',
+Lemma span_cvm: forall atp t annt i j e e' tr tr' p p' i' ac ac',
     build_cvmP
       atp
       {| st_ev := e;
@@ -390,11 +629,11 @@ Proof.
   }
   subst.
   symmetry.
-  eapply cvm_spans_term; eauto.
+  eapply cvm_spans; eauto.
 Defined.
 
-(** * Propositional version of cvm_spans_annoTerm *)
-Lemma cvm_spans_annoTermP: forall t pt annt i i' e e' p p' tr tr' st_evid1 ac ac',
+(** * Propositional version of span_cvm *)
+Lemma anno_span_cvm: forall t pt annt i i' e e' p p' tr tr' st_evid1 ac ac',
     annoP_indexed annt t i i' ->
     term_to_coreP t pt ->
     build_cvmP pt
@@ -415,7 +654,7 @@ Lemma cvm_spans_annoTermP: forall t pt annt i i' e e' p p' tr tr' st_evid1 ac ac
 Proof.
   intros.
   invc H.
-  eapply cvm_spans_annoTerm; eauto.
+  eapply span_cvm; eauto.
 Qed.
 
 
@@ -514,13 +753,25 @@ Proof.
     wrap_ccp_anno.
     repeat ff.
 
+    repeat ff.
+    unfold do_remote in *.
+    unfold liftDispatchErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    repeat ff.
+    unfold liftCallbackErrM in *.
+    unfold liftErrM in *.
+    repeat break_match.
+    monad_unfold.
+    repeat ff.
+
     assert (n = i + event_id_span' t + 1) by lia.
     subst.
     (* clear H2. *)
    
     assert (t = unanno a) as H3.
     {
-      invc Heqp0.
+      invc Heqp3.
       
       erewrite <- anno_unanno at 1.
       rewrite H.
@@ -579,8 +830,6 @@ Proof.
 
     
     econstructor.
-
-    Print stattstop.
     
     apply stattstop.
     econstructor.
@@ -600,7 +849,7 @@ Proof.
     
     assert (n = H1).
     {
-      eapply cvm_spans_annoTermP.
+      eapply anno_span_cvm.
       econstructor.
       invc Heqp0.
       eassumption.
@@ -672,7 +921,7 @@ Proof.
     {
       assert (i+1 = S i) by lia.
       find_rewrite.
-      eapply cvm_spans_annoTerm.
+      eapply span_cvm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -748,7 +997,7 @@ Proof.
     {
       assert (i+1 = S i) by lia.
       find_rewrite.
-      eapply cvm_spans_annoTerm.
+      eapply span_cvm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -827,7 +1076,7 @@ Proof.
     {
       assert (i+1 = S i) by lia.
       find_rewrite.
-      eapply cvm_spans_annoTerm.
+      eapply span_cvm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -907,7 +1156,7 @@ Proof.
     {
       assert (i+1 = S i) by lia.
       find_rewrite.
-      eapply cvm_spans_annoTerm.
+      eapply span_cvm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -1001,7 +1250,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply cvm_spans_annoTerm; eauto.
+      eapply span_cvm; eauto.
       econstructor; tauto.
     }
     subst.
@@ -1089,7 +1338,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply cvm_spans_annoTerm; eauto.
+      eapply span_cvm; eauto.
       econstructor; tauto.
     }
     subst.
@@ -1169,7 +1418,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply cvm_spans_annoTerm; eauto.
+      eapply span_cvm; eauto.
       econstructor; tauto.
     }
     subst.
@@ -1248,7 +1497,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply cvm_spans_annoTerm; eauto.
+      eapply span_cvm; eauto.
       econstructor; tauto.
     }
     subst.

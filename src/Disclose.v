@@ -1580,7 +1580,7 @@ Proof.
     
     assert (n = H4).
     {
-      eapply anno_span_cvm; eauto;
+      eapply cvm_spans_annoTerm; eauto;
       econstructor; eauto.
     }
     subst.
@@ -1662,7 +1662,7 @@ Proof.
     {
       assert (cvmi+1 = S cvmi) by lia.
       find_rewrite.
-      eapply span_cvm.
+      eapply cvm_spans_annoTerm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -1753,7 +1753,7 @@ Proof.
     {
       assert (cvmi+1 = S cvmi) by lia.
       find_rewrite.
-      eapply span_cvm.
+      eapply cvm_spans_annoTerm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -1843,7 +1843,7 @@ Proof.
     {
       assert (cvmi+1 = S cvmi) by lia.
       find_rewrite.
-      eapply span_cvm.
+      eapply cvm_spans_annoTerm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -1933,7 +1933,7 @@ Proof.
     {
       assert (cvmi+1 = S cvmi) by lia.
       find_rewrite.
-      eapply span_cvm.
+      eapply cvm_spans_annoTerm.
       eassumption.
       econstructor; tauto.
       invc Heqp0.
@@ -2034,7 +2034,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply span_cvm; eauto.
+      eapply cvm_spans_annoTerm; eauto.
       
       econstructor; tauto.
     }
@@ -2111,7 +2111,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply span_cvm; eauto.
+      eapply cvm_spans_annoTerm; eauto.
       econstructor; tauto.
     }
     subst.
@@ -2184,7 +2184,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply span_cvm; eauto.
+      eapply cvm_spans_annoTerm; eauto.
       econstructor; tauto.
     }
     subst.
@@ -2256,7 +2256,7 @@ Proof.
       find_rewrite.
       invc Heqp0.
       
-      eapply span_cvm; eauto.
+      eapply cvm_spans_annoTerm; eauto.
       econstructor; tauto.
     }
     subst.
