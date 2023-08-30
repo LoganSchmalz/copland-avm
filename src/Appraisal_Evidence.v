@@ -538,12 +538,6 @@ Proof.
       invc H.
       repeat ff; try (unfold OptMonad_Coq.bind in * ); repeat ff.
     + (* ENCR case *)
-      (*
-      Print et_fun.
-      Print do_inv_recon_ee.
-      Print do_inv_recon_ee.
-      Locate reconstruct_ev.
-       *)
       
       invc H.
       unfold reconstruct_ev in *.
@@ -1285,8 +1279,55 @@ Definition spc_ev (sp:SP) (e:EvidenceC) : EvidenceC :=
   | NONE => mtc
   end.
 
+Definition do_asp_nofail (ps:ASP_PARAMS) (ev:RawEv) (p:Plc) (x:Event_ID): BS.
+Admitted. (* TODO:  fill this in with some sort of callback + default value? *)
 
+Definition cvm_evidence_denote_asp (a:ASP) (p:Plc) (e:EvidenceC) (x:Event_ID): EvidenceC :=
+  match a with
+  | NULL => mtc
+  | CPY => e
+  | ASPC sp fwd params =>
+    match fwd with
+    | COMP => hhc p params
+                 (do_asp_nofail params (encodeEv (spc_ev sp e)) p x)
+                 (sp_ev sp (et_fun e))
+    | EXTD => ggc p params
+                 (do_asp_nofail params (encodeEv (spc_ev sp e)) p x)
+                 (spc_ev sp e)
+    | ENCR => eec p params
+                 (do_asp_nofail params (encodeEv (spc_ev sp e)) p x)
+                 (sp_ev sp (et_fun e))
+    | KEEP => (spc_ev sp e)
+    | KILL => mtc (* kkc p params (sp_ev sp (et_fun e)) *)
+    end
+  | SIG => ggc p sig_params
+              (do_asp_nofail sig_params (encodeEv e) p x)
+              e
+  | HSH => hhc p hsh_params
+              (do_asp_nofail hsh_params (encodeEv e) p x)
+              (et_fun e)
+  | ENC q => eec p (enc_params q)
+                (do_asp_nofail (enc_params q) (encodeEv e) p x)
+                (et_fun e)
+  end.
+
+
+(** * Denotation function of a Typed Concrete Evidence value from an annotated term, initial place, initial evidence *)
+Fixpoint cvm_evidence_denote (t:AnnoTerm) (p:Plc) (ec:EvidenceC) : EvidenceC :=
+  match t with
+  | aasp (i,_) x => cvm_evidence_denote_asp x p ec i
+  | aatt _ q x => cvm_evidence_denote x q ec
+  | alseq _ t1 t2 => cvm_evidence_denote t2 p (cvm_evidence_denote t1 p ec)
+  | abseq _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)))
+                         (cvm_evidence_denote t2 p ((splitEvr s ec)))
+  | abpar _ s t1 t2 => ssc (cvm_evidence_denote t1 p ((splitEvl s ec)))
+                         (cvm_evidence_denote t2 p ((splitEvr s ec)))
+  end.
+
+Set Warnings "-notation-overridden".
 Require Import Cvm_Monad.
+Set Warnings "notations-overridden".
+
 
 (** * Assert an arbitrary (remote) CVM execution.  
       Uses uninterpreted functions for "simulated" CVM evidence and events. *)
@@ -1310,6 +1351,319 @@ Ltac do_assume_remote t e p i (* x *) :=
   do_assert_remote (*x*) t e p i (* ;
   do_assert_unannoPar t x *) .
  *)
+
+
+(**  * Event ID spans same for a term and its corresponding core term. *)
+Lemma event_id_spans_same : forall t,
+    event_id_span' t = event_id_span (copland_compile t).
+Proof.
+  intros.
+  induction t; ff.
+  -
+    destruct a; ff; try tauto.
+    (* 
+    +
+      destruct s; ff.
+  -
+    jkjke'.
+  -
+    destruct s0; ff; lia.
+  -
+    destruct s0; ff; lia. *)
+Qed.
+
+
+
+
+
+(** * Lemma:  CVM increases event IDs according to event_id_span' denotation. *)
+Lemma cvm_spans: forall t pt e tr p i e' tr' p' i' ac ac',
+    term_to_coreP t pt ->
+    build_cvmP
+      pt
+      {| st_ev := e;
+         st_trace := tr;
+         st_pl := p;
+         st_evid := i;
+         st_AM_config := ac |}
+      (resultC tt)
+      {|
+        st_ev := e';
+        st_trace := tr';
+        st_pl := p';
+        st_evid := i';
+        st_AM_config := ac'
+      |} ->
+    i' = i + event_id_span' t.
+Proof.
+  intros.
+  generalizeEverythingElse t.
+  induction t; intros;
+    wrap_ccp_anno.
+
+  
+ (*   (* This is more automated, but slower *)
+    try (
+        destruct a;
+        try destruct a;
+        ff; tauto);
+    try (
+        repeat find_apply_hyp_hyp;
+        lia).
+Defined.
+  *)
+   
+  - (* asp case *)
+    destruct a;
+      try destruct a;
+      ff; try tauto;
+      try (wrap_ccp_anno; ff).
+  
+  - (* at case *)
+    repeat ff.
+    lia.
+  - (* lseq case *)
+    wrap_ccp_anno.
+
+    destruct r; ff.
+    destruct u; ff.
+
+
+
+    assert (st_evid0 = i + event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (i' = st_evid0 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    lia.
+  -
+    destruct s0; destruct s1.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff; 
+      try destruct r3; ff;
+      try destruct r0; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff; 
+      try destruct r3; ff;
+      try destruct r0; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff; 
+      try destruct r3; ff;
+      try destruct r0; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff; 
+      try destruct r3; ff;
+      try destruct r0; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid1 = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (st_evid = st_evid1 + event_id_span' t2).
+    eapply IHt2.
+    2: { eassumption. }
+    econstructor; eauto.
+    subst.
+    lia.
+  - (* bpar case *)
+    destruct s0; destruct s1.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff;
+      try destruct r3; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff;
+      try destruct r3; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff;
+      try destruct r3; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    lia.
+    +
+      wrap_ccp_anno.
+      try destruct r; ff;
+      try destruct r3; ff;
+      try destruct u; ff;
+      try destruct u0; ff.
+
+      assert (st_evid = (i + 1) +  event_id_span' t1).
+    eapply IHt1.
+    2: { eassumption. }
+    econstructor; eauto.
+
+    assert (event_id_span' t2 = event_id_span (copland_compile t2)).
+    {
+      eapply event_id_spans_same.
+    }
+    
+    lia.
+Qed.
+
+
+  
+(** * CVM event ID span same as annotated term range *)
+Lemma span_cvm: forall atp t annt i j e e' tr tr' p p' i' ac ac',
+    build_cvmP
+      atp
+      {| st_ev := e;
+         st_trace := tr;
+         st_pl := p;
+         st_evid := i;
+         st_AM_config := ac |} 
+      (resultC tt)
+      {| st_ev := e';
+         st_trace := tr';
+         st_pl := p';
+         st_evid := i';
+         st_AM_config := ac' |} ->
+    
+    term_to_coreP t atp -> 
+    anno t i = (j, annt) ->
+    j = i'.
+Proof.
+  intros.
+  assert (j = i + event_id_span' t).
+  {
+    assert (j - i = event_id_span' t).
+    {
+      symmetry.
+      eapply span_range.
+      eauto.
+    }
+    rewrite <- H2.
+    assert (j > i).
+    {
+      eapply anno_mono; eauto.
+    }
+    lia.
+  }
+  subst.
+  symmetry.
+  eapply cvm_spans; eauto.
+Defined.
+
+
+(** * Propositional version of span_cvm *)
+Lemma anno_span_cvm: forall t pt annt i i' e e' p p' tr tr' st_evid1 ac ac',
+    annoP_indexed annt t i i' ->
+    term_to_coreP t pt ->
+    build_cvmP pt
+                     {|
+                       st_ev := e ;
+                       st_trace := tr ;
+                       st_pl := p;
+                       st_evid := i;
+                       st_AM_config := ac
+                     |} (resultC tt)
+                     {|
+                       st_ev := e';
+                       st_trace := tr';
+                       st_pl := p';
+                       st_evid := st_evid1;
+                       st_AM_config := ac'
+                     |} ->
+    i' = st_evid1.
+Proof.
+  intros.
+  invc H.
+  eapply span_cvm; eauto.
+Qed.
+
+
+
 
 
 Lemma wfec_firstn: forall e0 e1 e2,
@@ -1509,7 +1863,7 @@ Proof.
   induction t; intros.
   - (* asp case *)
     wrap_ccp.
-    ff; eauto; intuition.
+    ff; eauto; auto with *.
 (*
     
     destruct a; (* asp *)
@@ -1679,7 +2033,7 @@ Proof.
     dd.
     cumul_ih.
     dd.
-    intuition.
+    auto with *.
 
   - (* bpar base *)
   wrap_ccp_dohi.
@@ -1699,7 +2053,7 @@ Proof.
   dd.
   cumul_ih.
   dd.
-  intuition.
+  auto with *.
 Qed.
 
 (** * Instance of st_trace_cumul'' where k=[] *)
@@ -2147,3 +2501,1226 @@ Proof.
   eauto.
 Qed.
 
+
+
+
+
+
+(*
+TODO: try this lemma again after getting appraisal Lemmas settled 
+*)
+
+
+(** * Lemma:  relating reconstructed CVM EvC bundles via the EvidenceC evidence denotation. *)
+Lemma cvm_raw_evidence_denote_fact :
+  forall t annt t' tr tr' bits bits' et et' p p' i i' ec ec' ac ac',
+    build_cvmP t
+                     (mk_st (evc bits et) tr p i ac)
+                     (resultC tt)
+                     (mk_st (evc bits' et') tr' p' i' ac') ->
+    term_to_coreP t' t ->
+    annoP_indexed annt t' i i' ->
+
+    reconstruct_evP (evc bits et) ec ->
+    reconstruct_evP (evc bits' et') ec' ->
+
+    cvm_evidence_denote annt p ec = ec'.
+Proof.
+  intros.
+  generalizeEverythingElse t'.
+  induction t'; intros.
+  -
+    wrap_ccp_anno.
+    
+    destruct a. (* wrap_ccp_anno. *)
+    + (* NULL case *)
+      wrap_ccp_anno.
+      ff.
+      invc H3.
+      dd.
+      tauto.   
+    + (* CPY case *)
+      wrap_ccp_anno.
+      dd.
+      eapply reconP_determ; eauto.
+
+    + (* ASPC case *)
+      wrap_ccp_anno.
+      ff.
+      ++ (* COMP case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        assert (bits = encodeEv ec).
+        {
+          symmetry.
+          invc H2.
+          eapply recon_encodeEv.
+          econstructor.
+          eassumption.
+        }
+        subst.
+
+        assert (et_fun ec = et).
+      {
+        symmetry.
+        eapply etfun_reconstruct.
+        eassumption.
+      }
+      (*
+      congruence.
+      *)
+      admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      ++ (* COMP NONE case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      ++ (* ENCR ALL case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+         assert (bits = encodeEv ec).
+        {
+          symmetry.
+          invc H2.
+          eapply recon_encodeEv.
+          econstructor.
+          eassumption.
+        }
+        subst.
+
+        assert (et_fun ec = et).
+      {
+        symmetry.
+        eapply etfun_reconstruct.
+        eassumption.
+      }
+      (* congruence. *)
+      admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+
+      ++ (* ENCR NONE case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+        
+      ++ (* EXTD ALL case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        invc H2.
+        ff.
+        jkjke'.
+        ff.
+        assert (bits = encodeEv ec).
+        {
+          symmetry.
+          eapply recon_encodeEv.
+          econstructor.
+          eassumption.
+        }
+        subst.
+        admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+        (* tauto. *)
+      ++ (* EXTD NONE case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      ++ (* KILL ALL case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+      ++ (* KILL NONE case *)
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+             
+      ++
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+        assert (et_fun ec' = et').
+        {
+          symmetry.
+          eapply etfun_reconstruct.
+          econstructor.
+          
+        eassumption.
+        }
+        invc H2.
+        unfold reconstruct_ev in *.
+        congruence.
+      ++
+        wrap_ccp_anno.
+        invc H3.
+        ff.
+
+    +
+      wrap_ccp.
+      dd.
+      invc H3; invc H2.
+      dd.
+      Auto.ff.
+      jkjke'.
+      dd.
+      rewrite recon_encodeEv with (bits:=bits) (et:=et).
+      admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      (* tauto. *)
+      econstructor; eassumption.
+
+    +
+      wrap_ccp.
+      invc H3; invc H2.
+      dd.
+      assert (et_fun ec = et).
+      {
+        symmetry.
+        eapply etfun_reconstruct.
+        econstructor.
+        eassumption.
+      }
+
+      rewrite recon_encodeEv  with (bits:=bits) (et:=et).
+      admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      (* congruence. *)
+      econstructor; eassumption.
+    +
+      wrap_ccp.
+      invc H3; invc H2.
+      dd.
+      assert (et_fun ec = et).
+      {
+        symmetry.
+        eapply etfun_reconstruct.
+        econstructor.
+        eassumption.
+      }
+
+      rewrite recon_encodeEv  with (bits:=bits) (et:=et).
+      admit. (* TODO: figure out how to deal with do_asp_nofail or equivalent *)
+      (* congruence. *)
+      econstructor; eassumption.
+      
+
+  - (* at case *)
+    wrap_ccp_anno.
+    repeat ff.
+    wrap_ccp_anno.
+    repeat ff.
+
+    do_assert_remote (copland_compile t') (evc bits et) p (S i) ac'.
+
+    
+    assert (evc bits' (eval t' p et) = cvm_evidence_core (copland_compile t') p (evc bits et)). {
+
+    Axiom cvm_evidence_core_at : forall t p bits bits' et ac,
+    do_remote t p (evc bits et) ac = resultC bits' -> 
+    cvm_evidence_core (copland_compile t) p (evc bits et) = evc bits' (eval t p et).
+
+    symmetry.
+
+    eapply cvm_evidence_core_at.
+    eauto.
+
+    (*
+    Axiom cvm_evidence_correct_type : forall t p e e',
+  cvm_evidence t p e = e' -> 
+  get_et e' = eval t p (get_et e).
+    *)
+
+    (*
+      rewrite at_evidence in *.
+      unfold cvm_evidence in *.
+      rewrite H5.
+      tauto.  *)
+    }
+
+    eapply IHt'.
+    econstructor.
+    
+    rewrite <- H5 in H4.
+    eassumption.
+    econstructor; eauto.
+    assert (n = (S i + event_id_span (copland_compile t'))).
+    {
+      wrap_ccp_anno.
+      eapply anno_span_cvm.
+      eassumption.
+      2: { eassumption. }
+      econstructor; eauto.
+    }
+    subst.
+    eassumption.
+    eassumption.
+    eassumption.
+
+  - (* lseq case *)
+    wrap_ccp_anno.
+    ff.
+    wrap_ccp_anno.
+    ff.
+
+    assert (n = st_evid0).
+    {
+      eapply anno_span_cvm.
+      eassumption.
+      2: { eassumption. }
+      econstructor; eauto.
+    }
+    
+    dd.
+
+    destruct st_ev0.
+
+    assert (wf_ec (evc bits et)).
+    {
+      eapply wfec_recon; eauto.
+    }
+
+    do_wfec_preserved.
+
+    do_somerecons.
+    
+    assert ((cvm_evidence_denote a p' ec) = H9).
+    {
+      eapply IHt'1.
+      
+      apply Heqp0.
+      econstructor; eauto.
+      eassumption.
+
+      eassumption.
+      eassumption.
+    }
+    
+    subst.
+    eapply IHt'2.
+    apply Heqp1.
+    econstructor; eauto.
+    eassumption.
+    eauto.
+    eauto.
+    
+  - (* bseq case *)
+    wrap_ccp_anno;
+      ff;
+      wrap_ccp_anno.
+    
+    +
+    Auto.ff.
+    invc H2; invc H3.
+    Auto.ff.
+    try rewrite fold_recev in *.
+    repeat Auto.ff.
+    unfold OptMonad_Coq.bind in *.
+    Auto.ff.
+
+    try rewrite fold_recev in *.
+    repeat do_wrap_reconP.
+    Auto.ff.
+      Auto.ff.
+      unfold OptMonad_Coq.bind in *.
+      Auto.ff.
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+        econstructor; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+
+      do_somerecons.
+
+      (*
+      assert (reconstruct_evP (evc r e4) e).
+      {
+        econstructor.
+        ff.
+      }
+
+    assert (reconstruct_evP (evc r0 e5) e0).
+    {
+      econstructor.
+      ff.
+    } 
+    *)
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid1).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp2. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a st_pl0 ec = e1).
+    {
+      repeat do_wrap_reconP.
+      try rewrite fold_recev in *.
+      repeat do_wrap_reconP.
+      eapply IHt'1.
+      apply Heqp2.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      eassumption.
+    }
+
+    assert (cvm_evidence_denote a0 st_pl0 ec = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      eassumption.
+    } 
+    dd.
+    congruence.
+
+
+    +
+    Auto.ff.
+    invc H2; invc H3.
+    Auto.ff.
+    try rewrite fold_recev in *.
+    repeat Auto.ff.
+    unfold OptMonad_Coq.bind in *.
+    Auto.ff.
+
+    try rewrite fold_recev in *.
+    repeat do_wrap_reconP.
+    Auto.ff.
+      Auto.ff.
+      unfold OptMonad_Coq.bind in *.
+      Auto.ff.
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+        econstructor; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+
+      do_somerecons.
+
+      (*
+      assert (reconstruct_evP (evc r e4) e).
+      {
+        econstructor.
+        ff.
+      }
+
+    assert (reconstruct_evP (evc r0 e5) e0).
+    {
+      econstructor.
+      ff.
+    } 
+    *)
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid1).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp2. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a st_pl0 ec = e1).
+    {
+      repeat do_wrap_reconP.
+      try rewrite fold_recev in *.
+      repeat do_wrap_reconP.
+      eapply IHt'1.
+      apply Heqp2.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      eassumption.
+    }
+
+    assert (wf_ec mt_evc).
+    {
+      econstructor.
+      ff.
+    }
+
+    assert (cvm_evidence_denote a0 st_pl0 mtc = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      invc H11.
+      eassumption.
+    } 
+    dd.
+    congruence.
+
+
+
+    +
+    Auto.ff.
+    invc H2; invc H3.
+    Auto.ff.
+    try rewrite fold_recev in *.
+    repeat Auto.ff.
+    unfold OptMonad_Coq.bind in *.
+    Auto.ff.
+
+    try rewrite fold_recev in *.
+    repeat do_wrap_reconP.
+
+      assert (wf_ec mt_evc).
+      {
+        econstructor.
+        eauto.
+      }
+
+
+
+      do_wfec_preserved.
+      repeat do_wrap_reconP.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+
+      do_somerecons.
+
+      (*
+      assert (reconstruct_evP (evc r e4) e).
+      {
+        econstructor.
+        ff.
+      }
+
+    assert (reconstruct_evP (evc r0 e5) e0).
+    {
+      econstructor.
+      ff.
+    } 
+    *)
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid1).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp8. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a st_pl0 mtc = e1).
+    {
+      repeat do_wrap_reconP.
+      try rewrite fold_recev in *.
+      repeat do_wrap_reconP.
+      eapply IHt'1.
+      apply Heqp8.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      eassumption.
+    }
+
+    assert (wf_ec mt_evc).
+    {
+      econstructor.
+      ff.
+    }
+
+    assert (cvm_evidence_denote a0 st_pl0 ec = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      invc H11.
+      eassumption.
+    } 
+    dd.
+    congruence.
+
+    +
+    Auto.ff.
+    invc H2; invc H3.
+    Auto.ff.
+    try rewrite fold_recev in *.
+    repeat Auto.ff.
+    unfold OptMonad_Coq.bind in *.
+    Auto.ff.
+
+    try rewrite fold_recev in *.
+    repeat do_wrap_reconP.
+
+      assert (wf_ec mt_evc).
+      {
+        econstructor.
+        eauto.
+      }
+
+
+
+      do_wfec_preserved.
+      repeat do_wrap_reconP.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+
+      do_somerecons.
+
+      (*
+      assert (reconstruct_evP (evc r e4) e).
+      {
+        econstructor.
+        ff.
+      }
+
+    assert (reconstruct_evP (evc r0 e5) e0).
+    {
+      econstructor.
+      ff.
+    } 
+    *)
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid1).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp9. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a st_pl0 mtc = e1).
+    {
+      repeat do_wrap_reconP.
+      try rewrite fold_recev in *.
+      repeat do_wrap_reconP.
+      eapply IHt'1.
+      apply Heqp9.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      eassumption.
+    }
+
+    assert (wf_ec mt_evc).
+    {
+      econstructor.
+      ff.
+    }
+
+    assert (cvm_evidence_denote a0 st_pl0 mtc = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      invc H11.
+      eassumption.
+    } 
+    dd.
+    congruence.
+
+  - (* bpar case *)
+    wrap_ccp_anno;
+      Auto.ff;
+      wrap_ccp_anno; 
+      Auto.ff.
+    
+    +
+      do_rewrap_reconP.
+      ff.
+      unfold OptMonad_Coq.bind in *.
+      ff.
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+      
+
+      do_somerecons.
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp2. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a p ec = e1).
+    {
+      eapply IHt'1.
+      apply Heqp2.
+      econstructor; eauto.
+      
+
+      eassumption.
+      eassumption.
+      econstructor; eauto.
+    }
+
+    do_assert_remote (copland_compile t'2) (evc bits et) p (st_evid) ac'.
+
+    wrap_ccp_anno.
+
+    rewrite par_evidence in *.
+
+    unfold cvm_evidence in *.
+    find_rewrite.
+
+    assert (cvm_evidence_denote a0 p ec = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid + event_id_span (copland_compile t'2)).
+      {
+        eapply anno_span_cvm.
+        apply Heqp1.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      eassumption.
+      econstructor; eauto.
+    }
+        
+    dd.
+    congruence.
+
+
+    +
+      do_rewrap_reconP.
+      ff.
+      unfold OptMonad_Coq.bind in *.
+      ff.
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+      
+
+      do_somerecons.
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp2. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a p ec = e1).
+    {
+      eapply IHt'1.
+      apply Heqp2.
+      econstructor; eauto.
+      
+
+      eassumption.
+      eassumption.
+      econstructor; eauto.
+    }
+
+     do_assert_remote (copland_compile t'2) mt_evc p (st_evid) ac'.
+
+    wrap_ccp_anno.
+
+    rewrite <- ev_cvm_mtc in *.
+
+    rewrite par_evidence in *.
+
+    unfold cvm_evidence in *.
+    find_rewrite.
+
+
+     assert (cvm_evidence_denote a0 p mtc = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid + event_id_span (copland_compile t'2)).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      econstructor; eauto.
+    }
+    
+      
+    dd.
+    congruence.
+
+
+    +
+      do_rewrap_reconP.
+      ff.
+      unfold OptMonad_Coq.bind in *.
+      ff.
+
+      assert (wf_ec mt_evc).
+      {
+        econstructor.
+        ff.
+      }
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+      
+
+      do_somerecons.
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp3. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a p mtc = e1).
+    {
+      eapply IHt'1.
+      eassumption.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      econstructor; eauto.
+    }
+
+     do_assert_remote (copland_compile t'2) (evc bits et) p (st_evid) ac'.
+
+    wrap_ccp_anno.
+
+    rewrite par_evidence in *.
+
+    unfold cvm_evidence in *.
+    find_rewrite.
+
+     assert (cvm_evidence_denote a0 p ec = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid + event_id_span (copland_compile t'2)).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      eassumption.
+      econstructor; eauto.
+    }
+    
+      
+    dd.
+    congruence.
+
+    +
+      do_rewrap_reconP.
+      ff.
+      unfold OptMonad_Coq.bind in *.
+      ff.
+
+      assert (wf_ec mt_evc).
+      {
+        econstructor.
+        ff.
+      }
+
+      assert (wf_ec (evc bits et)).
+      {
+        eapply wfec_recon; eauto.
+      }
+
+      do_wfec_preserved.
+
+      do_wfec_firstn.
+      do_wfec_skipn.
+
+      clear_skipn_firstn.
+      
+
+      do_somerecons.
+
+    assert (i + 1 = S i) as H13 by lia.
+    rewrite H13 in *; clear H13.
+
+    assert (n = st_evid).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { 
+             apply Heqp3. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+    assert (cvm_evidence_denote a p mtc = e1).
+    {
+      eapply IHt'1.
+      apply Heqp3.
+      econstructor; eauto.
+      
+
+      eassumption.
+      econstructor; eauto.
+      econstructor; eauto.
+    }
+
+     do_assert_remote (copland_compile t'2) mt_evc p (st_evid) ac'.
+
+    wrap_ccp_anno.
+
+    rewrite <- ev_cvm_mtc in *.
+
+    rewrite par_evidence in *.
+
+    unfold cvm_evidence in *.
+    find_rewrite.
+
+
+     assert (cvm_evidence_denote a0 p mtc = e2).
+    {
+      eapply IHt'2.
+      eassumption.
+      econstructor; eauto.
+      assert (n0 = st_evid + event_id_span (copland_compile t'2)).
+      {
+        eapply anno_span_cvm.
+        eassumption.
+        2: { eassumption. }
+   
+        econstructor; eauto.
+      }
+      dd.
+
+      eassumption.
+      econstructor; eauto.
+      econstructor; eauto.
+    }
+    
+      
+    dd.
+    congruence.
+Admitted.
+
+
+Lemma cvm_raw_evidence_denote_fact_eval :
+  forall t annt t' tr tr' bits bits' et et' p p' i i' ec ec' ac ac',
+    build_cvmP t
+                     (mk_st (evc bits et) tr p i ac)
+                     (resultC tt)
+                     (mk_st (evc bits' et') tr' p' i' ac') ->
+    term_to_coreP t' t ->
+    annoP_indexed annt t' i i' ->
+
+    reconstruct_evP (evc bits et) ec ->
+    reconstruct_evP (evc bits' (eval t' p et)) ec' ->
+
+    cvm_evidence_denote annt p ec = ec'.
+Proof.
+  intros.
+  assert (et' = eval t' p et).
+  {
+    eapply cvm_refines_lts_evidence.
+    eassumption.
+    eassumption.
+  }
+  eapply cvm_raw_evidence_denote_fact; eauto.
+  congruence.
+Qed.
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(** BEGIN Deprecated parallel annotated term stuff *)
+
+(*
+Lemma anno_parP_redo: forall t pt loc loc',
+    anno_par_list' t loc = Some (loc', pt) ->
+    anno_parP pt t.
+Proof.
+  intros.
+  econstructor.
+  eexists.
+  jkjke.
+Defined.
+
+(*
+Lemma anno_parPloc_redo: forall t pt loc loc',
+    anno_par t loc = (loc', pt) ->
+    anno_parPloc pt t loc.
+Proof.
+  intros.
+  econstructor.
+  jkjke.
+Defined.
+ *)
+Lemma anno_parPloc_redo: forall t pt loc loc',
+    anno_par_list' t loc = Some (loc', pt) ->
+    anno_parPloc pt t loc.
+Proof.
+  intros.
+  econstructor.
+  jkjke.
+Defined.
+
+ *)
+
+(*
+
+Ltac do_annopar_redo :=
+  match goal with
+  | [H: anno_par ?t ?loc = (_,?pt)
+     |- _ ] =>
+    eapply anno_parP_redo in H
+  end.
+
+Ltac do_annopar_loc_redo :=
+  match goal with
+  | [H: anno_par ?t ?loc = (_,?pt)
+     |- _ ] =>
+    eapply anno_parPloc_redo in H
+  end.
+ *)
+
+
+(*
+
+Ltac do_annopar_redo :=
+  match goal with
+  | [H: anno_par_list' ?t ?loc = Some (_,?pt)
+     |- _ ] =>
+    eapply anno_parP_redo in H
+  end.
+
+Ltac do_annopar_loc_redo :=
+  match goal with
+  | [H: anno_par_list' ?t ?loc = (_,?pt)
+     |- _ ] =>
+    eapply anno_parPloc_redo in H
+  end.
+
+
+
+Ltac inv_annoparP :=
+  match goal with
+  | [H: anno_parP _ _ (* ?t (?c _) *)
+     |- _ ] =>
+    inversion H; subst
+  end;
+  destruct_conjs.
+
+Ltac inv_annoparPloc :=
+  match goal with
+  | [H: anno_parPloc _ _ _(*?t (?c _) _ *)
+     |- _ ] =>
+    inversion H; subst
+  end;
+  destruct_conjs.
+ *)
+
+
+(*
+Ltac wrap_annopar :=
+  inv_annoparP;
+  dd;
+  repeat do_annopar_redo.
+
+Ltac wrap_annoparloc :=
+  inv_annoparPloc;
+  dd;
+  repeat do_annopar_loc_redo.
+ *)
+
+
+(** END Deprecated parallel annotated term stuff *)

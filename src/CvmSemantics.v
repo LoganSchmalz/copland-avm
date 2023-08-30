@@ -580,8 +580,6 @@ Proof.
     
     econstructor.
 
-    Print stattstop.
-    
     apply stattstop.
     econstructor.
 
